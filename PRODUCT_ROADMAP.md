@@ -42,7 +42,8 @@ Other required metrics:
 | Dune | Historical transfers, balances, trade backfill, aggregate queries | Proving an off-chain social identity such as FOMO |
 | Supabase | Durable jobs, labels, current aggregates, snapshots/chart data | Chain indexing by itself |
 | Dexscreener | Current price, liquidity, pools and optional display overlay | Wallet ownership history or FOMO labels |
-| Curated labels / signed opt-in | Verified FOMO identity mapping | Inferring an unknown wallet's identity |
+| FomoScan v2 | Proof-verified FOMO wallet/handle identity enrichment | Holder discovery, Pump trade indexing, or price history |
+| Curated labels / signed opt-in | Fallback or supplementary verified FOMO identity mapping | Inferring an unknown wallet's identity |
 
 ## Indexing flow
 
@@ -108,6 +109,9 @@ History plan:
 
 ## UI requirements
 
+- Render the token image in the token header after a successful scan. The current header uses a static fallback icon even when token metadata contains an image URL.
+- Use a safe image fallback for tokens that genuinely have no image, broken image URLs, or unavailable metadata.
+- Keep the result selected after choosing a search suggestion, including token name, symbol, image, and CA.
 - Show `INDEXING`, `PARTIAL`, `COMPLETE`, or `FAILED` beside every metric.
 - Show holder coverage as indexed/known, e.g. `1,842 / 1,842 holders`.
 - Separate holders from buyers.
@@ -115,9 +119,29 @@ History plan:
 - Show source and verification date on a FOMO label.
 - Do not call unknown/self-custody wallets "Phantom".
 
-## FOMO identity strategy — no FomoScan dependency
+## FOMO identity strategy — FomoScan v2 primary, no single-point dependency
 
-The app must run without FomoScan.
+FomoScan v2 is a working verified-identity source. The server-side key was tested successfully against both directions of lookup; do not put the key in browser code.
+
+Use only the current official endpoints:
+
+- `GET /v2/user/wallet/{wallet}`: wallet -> verified FOMO profile.
+- `GET /v2/user/handle/{handle}`: handle -> verified wallets/profile.
+- `GET /v2/user/id/{id}`: retrieve a profile by stable identity id.
+
+Do not use the retired `/v1/identities/...` endpoints; they return `404`.
+
+Integration behaviour:
+
+1. Index public on-chain holders/buyers first.
+2. Queue wallet-label lookups after holder/buyer discovery; never block the initial scan on thousands of HTTP calls.
+3. Cache a positive lookup by wallet and stable FomoScan `id`; cache misses briefly, then retry later.
+4. Respect provider rate limits with small concurrency, exponential retry on `429`, and durable job progress.
+5. Store only needed public fields: stable id, handle, wallet, source, verified/observed time, and response version. Never store API keys in scan data.
+6. Group wallets by stable id where the API confirms that relationship; handles can change.
+7. Show label coverage, e.g. `1,240 / 1,842 holders checked`, so a partial label queue never looks like a definitive zero.
+
+The app must still run if FomoScan is slow, unavailable, or its contract changes. The fallback label sources are:
 
 Approved label sources:
 
@@ -127,13 +151,19 @@ Approved label sources:
 
 Use `verified_fomo`, `possible_fomo`, and `unknown` separately. Only `verified_fomo` affects the headline FOMO %.
 
-## FomoScan: optional enrichment only
-
-If a stable, authorized API becomes available, it can enrich wallet -> handle mappings, verification timestamps, and potentially token-holder identity matches. It is not required for Pump buyer indexing, holder balances, graduation detection, post-grad trades, or the chart. It cannot prove every FOMO wallet unless it provides a complete verified wallet dataset.
+FomoScan enriches wallet -> handle mapping, verification timestamps, and identity grouping. It is not a replacement for Pump buyer indexing, holder balances, graduation detection, post-grad trades, or the chart. It cannot prove every FOMO wallet unless it returns a complete verified wallet dataset.
 
 Never use passwords, browser cookies, undocumented protected endpoints, or techniques intended to bypass a provider's access controls. Public on-chain Pump/PumpSwap decoding is in scope; bypassing a private identity service is not.
 
 ## Delivery order
+
+### Phase 0 — foundation and UI correctness
+
+- Fix token header image rendering after selecting/scanning a token; use `token.image` with a visible fallback.
+- Confirm token metadata precedence and graceful image-error handling.
+- Replace misleading static copy such as top-20 coverage being presented as complete coverage.
+- Make every async metric visibly pending/partial/completed.
+- Add unit/UI tests for search selection, token image display, and metric state rendering.
 
 ### Phase 1 — correctness
 
@@ -149,7 +179,8 @@ Never use passwords, browser cookies, undocumented protected endpoints, or techn
 ### Phase 3 — all holders and labels
 
 - Replace top-20-only scanning with a full holder index.
-- Add curated labels and label provenance.
+- Add FomoScan v2 label-enrichment jobs, caching, stable-id grouping, rate-limit handling, and provenance.
+- Add curated-label/opt-in fallback sources and label provenance.
 - Calculate verified FOMO and cohort supply percentages.
 
 ### Phase 4 — historical analytics
@@ -168,3 +199,4 @@ Never use passwords, browser cookies, undocumented protected endpoints, or techn
 - "All wallets immediately" for any large token generally needs paid indexing/RPC capacity later.
 - Exact on-chain data and verified off-chain identity are distinct claims and must be displayed separately.
 - Rotate any service credentials that were shared outside their intended secret store.
+
