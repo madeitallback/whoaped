@@ -71,6 +71,7 @@ export default function Home() {
         <MixCard label="OTHER" tone="blue" data={data.mix.other} detail="Unknown / unlabelled wallets" />
       </section>
       <p className="coverage">ⓘ {data.split.coverageNote}</p>
+      {data.token.isPumpFun && <p className="coverage">⌁ Curve index: {data.indexing.curve.state === "completed" ? `complete · ${number(data.indexing.curve.buyersFound)} buyers found` : `${data.indexing.curve.state} · ${number(data.indexing.curve.scannedSignatures)} signatures scanned · ${number(data.indexing.curve.buyersFound)} buyers found`}</p>}
       <section className="context-grid">
         <Metric title="Curve leftover" value={data.split.pumpfunCurvePctOfSupply === null ? "N/A" : pct(data.split.pumpfunCurvePctOfSupply)} sub={data.token.curveProgressPct !== null ? `${pct(data.token.curveProgressPct)} to graduation` : "Not a Pump.fun curve"} accent="yellow" />
         <Metric title="PumpSwap buyers" value={data.venues.pumpswapBuyers === null ? "INDEX NEEDED" : number(data.venues.pumpswapBuyers)} sub={data.token.graduated ? "Post-grad indexing coming next" : "N/A while on curve"} />

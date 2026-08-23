@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { advanceDuneJobs, duneIndexState } from "@/lib/dune";
-import { advanceHeliusJobs, heliusIndexState } from "@/lib/helius-index";
+import { advanceHeliusJobs, heliusIndexProgress, heliusIndexState } from "@/lib/helius-index";
 import { parseMintInput } from "@/lib/solana";
 
 export const runtime = "nodejs";
@@ -20,8 +20,8 @@ export async function POST(request: Request) {
       await advanceDuneJobs(value).catch(() => false);
       await advanceHeliusJobs(value).catch(() => false);
     }
-    const [dune, helius] = await Promise.all([duneIndexState(value), heliusIndexState(value)]);
-    return NextResponse.json({ ok: true, dune, helius });
+    const [dune, helius, curve] = await Promise.all([duneIndexState(value), heliusIndexState(value), heliusIndexProgress(value)]);
+    return NextResponse.json({ ok: true, dune, helius, curve });
   } catch {
     return NextResponse.json({ ok: false, error: "Could not advance this index." }, { status: 500 });
   }
