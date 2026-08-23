@@ -1,0 +1,37 @@
+import { PublicKey } from "@solana/web3.js";
+import bs58 from "bs58";
+import { describe, expect, it } from "vitest";
+import { deriveBondingCurve, PUMP_PROGRAM } from "../lib/solana";
+import { pumpBuyOwner } from "../lib/buyers";
+
+describe("deriveBondingCurve", () => {
+  it("is deterministic and returns an off-curve PDA", () => {
+    const mint = new PublicKey("So11111111111111111111111111111111111111112");
+    const first = deriveBondingCurve(mint);
+    const second = deriveBondingCurve(mint);
+    expect(first.bondingCurve.toBase58()).toBe(second.bondingCurve.toBase58());
+    expect(PublicKey.isOnCurve(first.bondingCurve.toBytes())).toBe(false);
+    expect(first.associatedBondingCurve.equals(first.bondingCurve)).toBe(false);
+  });
+});
+
+describe("Pump buy layouts", () => {
+  const mint = "Mint111111111111111111111111111111111111111";
+  const curve = "Curve11111111111111111111111111111111111111";
+  const user = "User111111111111111111111111111111111111111";
+  const data = (discriminator: string) => bs58.encode(Buffer.from(discriminator, "hex"));
+
+  it("recognises a legacy buy only with its matching mint and curve", () => {
+    const accounts = Array.from({ length: 7 }, (_, index) => `legacy-${index}`);
+    accounts[2] = mint; accounts[3] = curve; accounts[6] = user;
+    expect(pumpBuyOwner({ programId: PUMP_PROGRAM.toBase58(), accounts, data: data("66063d1201daebea") }, mint, curve)).toBe(user);
+    accounts[3] = "wrong-curve";
+    expect(pumpBuyOwner({ programId: PUMP_PROGRAM.toBase58(), accounts, data: data("66063d1201daebea") }, mint, curve)).toBeNull();
+  });
+
+  it("recognises the v2 account layout", () => {
+    const accounts = Array.from({ length: 14 }, (_, index) => `v2-${index}`);
+    accounts[1] = mint; accounts[10] = curve; accounts[13] = user;
+    expect(pumpBuyOwner({ programId: PUMP_PROGRAM.toBase58(), accounts, data: data("b817ee6167c5d33d") }, mint, curve)).toBe(user);
+  });
+});
