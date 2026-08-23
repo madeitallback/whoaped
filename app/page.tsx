@@ -54,21 +54,21 @@ export default function Home() {
     <section className="intro">
       <p className="eyebrow">WALLET INTELLIGENCE / SOLANA</p>
       <h1>Who bought this coin?</h1>
-      <p className="lede">Split unique buyers into <b>FOMO</b>, <b>Pump.fun</b>, and <b>Other (Phantom / unknown)</b>. No wallet connection. No guesswork.</p>
+      <p className="lede">Split unique buyers into <b>verified FOMO</b>, <b>Pump.fun</b>, and <b>other unknown wallets</b>. Data coverage is shown on every scan.</p>
       <form onSubmit={submit} className="search"><span>⌕</span><input value={input} onChange={e => setInput(e.target.value)} placeholder="Paste a mint, Pump.fun URL, or search $TICKER" aria-label="Token mint or ticker" /><button disabled={loading}>{loading ? "SCANNING…" : "SCAN"}</button></form>
-      <p className="hint">Works with Pump.fun coins and any SPL token. Holder coverage starts with the largest 20 accounts.</p>
+      <p className="hint">Works with Pump.fun coins and any SPL token. Current holder coverage starts with the largest 20 accounts while the full index is built.</p>
     </section>
     {error && <section className="notice error"><b>{error}</b>{candidates.length > 0 && <div className="candidates">{candidates.map(c => <button key={c.mint} onClick={() => void scan(c.mint)}><span>{c.image ? <img src={c.image} alt="" /> : "◎"}</span><b>{c.symbol}</b><small>{c.name} · {short(c.mint)}</small></button>)}</div>}</section>}
-    {loading && <section className="loading"><div className="scanline" /><span>Reading mint metadata</span><span>Resolving top holders</span><span>Matching FOMO wallet index</span><span>Parsing curve buys</span></section>}
+    {loading && <section className="loading"><div className="scanline" /><span>Reading mint metadata</span><span>Resolving top holders</span><span>Matching verified FOMO labels</span><span>Parsing curve buys</span></section>}
     {data && <>
       <section className="token-head">
-        <div className="token-icon">◎</div><div><p className="eyebrow">{data.token.isPumpFun ? "PUMP.FUN TOKEN" : "SPL TOKEN"}</p><h2>{data.token.name} <em>${data.token.symbol}</em></h2><button className="address" onClick={() => copy(data.mint)}>{short(data.mint)} <span>⧉</span></button></div>
+        <TokenIcon image={data.token.image} symbol={data.token.symbol} /><div><p className="eyebrow">{data.token.isPumpFun ? "PUMP.FUN TOKEN" : "SPL TOKEN"}</p><h2>{data.token.name} <em>${data.token.symbol}</em></h2><button className="address" onClick={() => copy(data.mint)}>{short(data.mint)} <span>⧉</span></button></div>
         <div className={`badge ${data.token.graduated ? "green" : "orange"}`}>{data.token.graduated === null ? "NOT PUMP" : data.token.graduated ? "GRADUATED" : "ON CURVE"}</div>
       </section>
       <section className="hero-grid">
-        <MixCard label="FOMO" tone="pink" data={data.mix.fomo} detail="Known FOMO wallets" />
+        <MixCard label="FOMO" tone="pink" data={data.mix.fomo} detail="Verified FOMO wallets" />
         <MixCard label="PUMP.FUN" tone="yellow" data={data.mix.pumpfun} detail="Curve buy wallets" />
-        <MixCard label="OTHER" tone="blue" data={data.mix.other} detail="Phantom / unknown" />
+        <MixCard label="OTHER" tone="blue" data={data.mix.other} detail="Unknown / unlabelled wallets" />
       </section>
       <p className="coverage">ⓘ {data.split.coverageNote}</p>
       <section className="context-grid">
@@ -90,4 +90,5 @@ export default function Home() {
 
 function MixCard({ label, tone, data, detail }: { label: string; tone: string; data: ScanResponse["mix"]["fomo"]; detail: string }) { return <article className={`mix ${tone}`}><p>{label}</p><div className="mix-value">{number(data.buyers)} <small>{pct(data.pctOfBuyers)}</small></div><span>{detail}</span><div className="mix-bottom"><div><b>{pct(data.holdRate)}</b><small>hold rate</small></div><div><b>{pct(data.pctOfSupply)}</b><small>supply held</small></div></div></article>; }
 function Metric({ title, value, sub, accent }: { title: string; value: string; sub: string; accent?: string }) { return <article className={`metric ${accent || ""}`}><p>{title}</p><strong>{value}</strong><small>{sub}</small></article>; }
+function TokenIcon({ image, symbol }: { image: string | null; symbol: string }) { const [failed, setFailed] = useState(false); return <div className="token-icon" style={{ overflow: "hidden" }}>{image && !failed ? <img src={image} alt={`${symbol} token`} onError={() => setFailed(true)} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : "◎"}</div>; }
 function Row({ row, index, buyers, copy }: { row: Buyer | ScanResponse["holders"][number]; index: number; buyers: boolean; copy: (x: string) => void }) { const label = buyers ? (row as Buyer).bucket : (row as ScanResponse["holders"][number]).label; const handle = row.fomoHandle; return <tr><td>{index + 1}</td><td><span className={`pill ${label}`}>{label.replace("pumpfun_", "")}</span></td><td><button className="owner" onClick={() => copy(row.owner)}>{short(row.owner)} <span>⧉</span></button></td><td>{handle ? <span className="handle">@{handle}</span> : <span className="muted">—</span>}</td><td>{buyers ? number((row as Buyer).buyTxCount) : number((row as ScanResponse["holders"][number]).uiAmount)}</td><td>{pct(row.pctOfSupply)}</td><td><a href={`https://solscan.io/account/${row.owner}`} target="_blank" rel="noreferrer">↗</a></td></tr>; }

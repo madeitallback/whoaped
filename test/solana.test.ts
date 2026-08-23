@@ -3,6 +3,7 @@ import bs58 from "bs58";
 import { describe, expect, it } from "vitest";
 import { deriveBondingCurve, PUMP_PROGRAM } from "../lib/solana";
 import { pumpBuyOwner } from "../lib/buyers";
+import { parseFomoScanProfile } from "../lib/fomo";
 
 describe("deriveBondingCurve", () => {
   it("is deterministic and returns an off-curve PDA", () => {
@@ -33,5 +34,11 @@ describe("Pump buy layouts", () => {
     const accounts = Array.from({ length: 14 }, (_, index) => `v2-${index}`);
     accounts[1] = mint; accounts[10] = curve; accounts[13] = user;
     expect(pumpBuyOwner({ programId: PUMP_PROGRAM.toBase58(), accounts, data: data("b817ee6167c5d33d") }, mint, curve)).toBe(user);
+  });
+});
+
+describe("FomoScan v2 profile parsing", () => {
+  it("keeps the stable identity id and handle from the v2 response", () => {
+    expect(parseFomoScanProfile({ id: "profile-123", handle: "trader", solanaAddress: "wallet" })).toEqual({ identityId: "profile-123", handle: "trader", confidence: null });
   });
 });
