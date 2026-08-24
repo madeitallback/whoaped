@@ -3,6 +3,7 @@ import { connection, rpcRetry } from "@/lib/solana";
 import { createHeliusJob, listHeliusJobs, replaceCurrentHolders, updateScanJob } from "@/lib/supabase";
 
 export type IndexedHolder = { owner: string; tokenAccount: string; amount: bigint };
+export type HolderIndexResult = { holders: IndexedHolder[]; tokenAccountCount: number };
 
 export type HolderIndexProgress = {
   state: string;
@@ -32,7 +33,7 @@ export async function enqueueHolderIndex(mint: string) {
 
 /** `getProgramAccounts` is one complete mint snapshot. It is only used from
  * the durable worker and the result is aggregated before persistence. */
-export async function indexAllHolders(mint: string, tokenProgram: string): Promise<IndexedHolder[]> {
+export async function indexAllHolders(mint: string, tokenProgram: string): Promise<HolderIndexResult> {
   const program = new PublicKey(tokenProgram);
   const mintKey = new PublicKey(mint);
   const accounts = await rpcRetry(() => connection().getProgramAccounts(program, {
@@ -50,7 +51,7 @@ export async function indexAllHolders(mint: string, tokenProgram: string): Promi
     const previous = byOwner.get(owner);
     byOwner.set(owner, { owner, tokenAccount: previous?.tokenAccount || account.pubkey.toBase58(), amount: (previous?.amount || 0n) + amount });
   }
-  return [...byOwner.values()].sort((a, b) => a.amount === b.amount ? 0 : a.amount > b.amount ? -1 : 1);
+  return { holders: [...byOwner.values()].sort((a, b) => a.amount === b.amount ? 0 : a.amount > b.amount ? -1 : 1), tokenAccountCount: accounts.length };
 }
 
 /** Processes one full holder job. A failed provider response preserves the
@@ -65,10 +66,10 @@ export async function advanceHolderJobs(mint: string) {
   }
   try {
     await updateScanJob(job.id, { status: "running" });
-    const holders = await indexAllHolders(mint, tokenProgram);
+    const { holders, tokenAccountCount } = await indexAllHolders(mint, tokenProgram);
     const observedAt = new Date().toISOString();
     await replaceCurrentHolders(mint, holders, observedAt);
-    await updateScanJob(job.id, { status: "completed", payload: { token_program: tokenProgram, pages: 1, holder_count: holders.length, token_account_count: holders.reduce((count) => count + 1, 0), observed_at: observedAt } });
+    await updateScanJob(job.id, { status: "completed", payload: { token_program: tokenProgram, pages: 1, holder_count: holders.length, token_account_count: tokenAccountCount, observed_at: observedAt } });
     return true;
   } catch (error) {
     await updateScanJob(job.id, { status: "failed", error: error instanceof Error ? error.message : "Holder index failed" });
