@@ -56,7 +56,7 @@ export interface ScanResponse {
   venues: { curveBuyers: number; pumpswapBuyers: number | null; curveOnly: number; pumpswapOnly: number | null; bothVenues: number | null; newAfterGrad: number | null };
   pumpfunBuyers: { uniqueBuyers: number; buyTxCount: number; stillHoldingCount: number; stillHoldingPctOfSupply: number; fomoBuyerCount: number; truncated: boolean; method: string; wallets: Buyer[] };
   pumpswapBuyers: { program: string; uniqueBuyers: number | null; truncated: boolean; method: string };
-  indexing: { curve: { state: string; pages: number; scannedSignatures: number; buyersFound: number; decoderVersion: number | null; latestBuy: { signature: string; owner: string; at: string | null } | null }; holders: { state: string; holderCount: number; tokenAccountCount: number; observedAt: string | null } };
+  indexing: { curve: { state: string; pages: number; scannedSignatures: number; buyersFound: number; decoderVersion: number | null; latestBuy: { signature: string; owner: string; at: string | null } | null }; holders: { state: string; holderCount: number; tokenAccountCount: number; observedAt: string | null }; labels: { state: string; checked: number; matched: number } };
   analytics: { fomoSupplyRaw: string; preGradSupplyRaw: string; postGradSupplyRaw: string; holderIndexComplete: boolean };
   holders: Holder[];
   updatedAt: string;

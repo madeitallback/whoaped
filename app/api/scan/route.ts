@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { PublicKey } from "@solana/web3.js";
 import { cached, store } from "@/lib/cache";
-import { resolveFomo } from "@/lib/fomo";
+import { resolveFomo, type FomoHit } from "@/lib/fomo";
 import { findCurveBuyers } from "@/lib/buyers";
-import { loadCurrentHolders, loadStoredBuyers, persistScan } from "@/lib/supabase";
+import { loadCurrentHolders, loadStoredBuyers, loadVerifiedFomoLabels, persistScan } from "@/lib/supabase";
 import { advanceDuneJobs, duneIndexState, enqueueDuneBuyerIndex } from "@/lib/dune";
 import { advanceHeliusJobs, enqueueHeliusCurveIndex, heliusIndexProgress, heliusIndexState } from "@/lib/helius-index";
 import { advanceHolderJobs, enqueueHolderIndex, holderIndexProgress } from "@/lib/holder-index";
+import { advanceLabelJobs, enqueueLabelIndex, labelIndexProgress } from "@/lib/label-index";
 import { BURN_ADDRESSES, connection, deriveBondingCurve, hasDedicatedRpc, parseCurveAccount, parseMintInput, pct, PUMPSWAP_PROGRAM, rpcRetry, tokenProgramFor, uiAmount } from "@/lib/solana";
 import type { Buyer, BucketMix, Holder, ScanResponse } from "@/lib/types";
 
@@ -51,11 +52,13 @@ export async function POST(request: Request) {
     const duneUpdated = await advanceDuneJobs(mint.toBase58()).catch(() => false);
     const heliusUpdated = await advanceHeliusJobs(mint.toBase58()).catch(() => false);
     const holderUpdated = await advanceHolderJobs(mint.toBase58()).catch(() => false);
+    const labelUpdated = await advanceLabelJobs(mint.toBase58()).catch(() => false);
     const existingDuneState = await duneIndexState(mint.toBase58()).catch(() => "not_started");
     const existingHeliusState = await heliusIndexState(mint.toBase58()).catch(() => "not_started");
     const existingHolderState = await holderIndexProgress(mint.toBase58()).then(progress => progress.state).catch(() => "not_started");
+    const existingLabelState = await labelIndexProgress(mint.toBase58()).then(progress => progress.state).catch(() => "not_started");
     const hit = cached<ScanResponse>(key);
-    if (hit && !duneUpdated && !heliusUpdated && !holderUpdated && existingDuneState !== "failed" && existingHeliusState !== "failed" && existingHolderState !== "failed") return NextResponse.json(hit);
+    if (hit && !duneUpdated && !heliusUpdated && !holderUpdated && !labelUpdated && existingDuneState !== "failed" && existingHeliusState !== "failed" && existingHolderState !== "failed" && existingLabelState !== "failed") return NextResponse.json(hit);
     const result = await scan(mint);
     try {
       await persistScan(result);
@@ -73,8 +76,12 @@ export async function POST(request: Request) {
     if (await enqueueHolderIndex(result.mint).catch(() => false)) {
       result.warnings.push("Full holder indexing started. The top-account view will be replaced with complete owner coverage when it finishes.");
     }
+    if (result.analytics.holderIndexComplete && await enqueueLabelIndex(result.mint).catch(() => false)) {
+      result.warnings.push("Verified FOMO label enrichment started. The FOMO supply percentage will increase only when a trusted label is confirmed.");
+    }
     result.indexing.curve = await heliusIndexProgress(result.mint).catch(() => result.indexing.curve);
     result.indexing.holders = await holderIndexProgress(result.mint).catch(() => result.indexing.holders);
+    result.indexing.labels = await labelIndexProgress(result.mint).catch(() => result.indexing.labels);
     store(key, result);
     return NextResponse.json(result);
   } catch (error) {
@@ -116,8 +123,11 @@ async function scan(mint: PublicKey): Promise<ScanResponse> {
   }
   const owners = [...ownerMap.values()].sort((a, b) => a.amount === b.amount ? 0 : a.amount > b.amount ? -1 : 1);
   const labelable = owners.filter(x => x.owner !== bondingCurve.toBase58() && x.owner !== creator && !BURN_ADDRESSES.has(x.owner)).map(x => x.owner);
-  const fomoLookup = labelable.slice(0, usingFullHolderIndex ? 100 : labelable.length);
-  const fomo = await resolveFomo(fomoLookup);
+  const fomoLookup = labelable.slice(0, usingFullHolderIndex ? 500 : labelable.length);
+  const storedFomo = await loadVerifiedFomoLabels(fomoLookup).catch(() => new Map());
+  const freshFomo = await resolveFomo(fomoLookup.filter(wallet => !storedFomo.has(wallet)).slice(0, 100));
+  const fomo = new Map<string, FomoHit>([...storedFomo.entries()].map(([wallet, hit]) => [wallet, hit] as const));
+  freshFomo.forEach((hit, wallet) => fomo.set(wallet, hit));
   let fomoRaw = 0n, creatorRaw = 0n, burnRaw = 0n;
   const allHolders: Holder[] = owners.map((item, index) => {
     const fomoHit = fomo.get(item.owner);
@@ -157,7 +167,11 @@ async function scan(mint: PublicKey): Promise<ScanResponse> {
   };
   history.buyers.forEach(item => rememberBuyer({ ...item, venue: "curve" }));
   indexedBuyers.forEach(item => rememberBuyer(item));
-  const buyerFomo = await resolveFomo([...mergedBuyers.values()].map(x => x.owner));
+  const buyerLookup = [...new Set([...mergedBuyers.values()].map(x => x.owner))].slice(0, 500);
+  const storedBuyerFomo = await loadVerifiedFomoLabels(buyerLookup).catch(() => new Map());
+  const freshBuyerFomo = await resolveFomo(buyerLookup.filter(wallet => !storedBuyerFomo.has(wallet)).slice(0, 100));
+  const buyerFomo = new Map<string, FomoHit>([...storedBuyerFomo.entries()].map(([wallet, hit]) => [wallet, hit] as const));
+  freshBuyerFomo.forEach((hit, wallet) => buyerFomo.set(wallet, hit));
   const buyersByOwner = new Map<string, Array<{ owner: string; venue: Buyer["venue"]; buyTxCount: number; firstBuyAt: string | null }>>();
   for (const item of mergedBuyers.values()) {
     const entries = buyersByOwner.get(item.owner) || [];
@@ -198,10 +212,13 @@ async function scan(mint: PublicKey): Promise<ScanResponse> {
   const duneState = await duneIndexState(mint.toBase58()).catch(() => "not_started");
   const heliusProgress = await heliusIndexProgress(mint.toBase58()).catch(() => ({ state: "not_started", pages: 0, scannedSignatures: 0, buyersFound: 0, decoderVersion: null, latestBuy: null }));
   const holderProgress = await holderIndexProgress(mint.toBase58()).catch(() => ({ state: "not_started", holderCount: 0, tokenAccountCount: 0, observedAt: null }));
+  const labelProgress = await labelIndexProgress(mint.toBase58()).catch(() => ({ state: "not_started", checked: 0, matched: 0 }));
   const heliusState = heliusProgress.state;
   const dunePending = duneState === "not_started" || duneState === "queued" || duneState === "running";
   if (graduated && dunePending) warnings.push("Post-graduation buyer indexing is in progress; PumpSwap figures will update after the Dune job completes.");
   if (heliusState === "queued" || heliusState === "running") warnings.push(`Full Pump.fun curve history is indexing (${heliusProgress.scannedSignatures} signatures scanned, ${heliusProgress.buyersFound} buyers found); current curve data is a lower bound.`);
+  if (holderProgress.state === "queued" || holderProgress.state === "running") warnings.push("Full holder indexing is in progress; the current holder table is still a fast top-account view.");
+  if (labelProgress.state === "queued" || labelProgress.state === "running") warnings.push(`Verified FOMO labels are indexing (${labelProgress.checked} wallets checked, ${labelProgress.matched} mappings confirmed).`);
   const graduationBuy = graduated ? history.latestBuy || heliusProgress.latestBuy : null;
   const curveOwners = new Set(buyerRows.filter(x => x.venues.includes("curve")).map(x => x.owner));
   const pumpswapOwners = new Set(buyerRows.filter(x => x.venues.includes("pumpswap")).map(x => x.owner));
@@ -210,5 +227,5 @@ async function scan(mint: PublicKey): Promise<ScanResponse> {
   const bothVenues = [...curveOwners].filter(owner => pumpswapOwners.has(owner)).length;
   const preGradSupplyRaw = buyerRows.filter(row => row.venues.includes("curve")).reduce((sum, row) => sum + (ownerMap.get(row.owner)?.amount || 0n), 0n);
   const postGradSupplyRaw = buyerRows.filter(row => row.venues.includes("pumpswap")).reduce((sum, row) => sum + (ownerMap.get(row.owner)?.amount || 0n), 0n);
-  return { ok: true, mint: mint.toBase58(), token: { name: metadata?.name || "Solana token", symbol: metadata?.symbol || mint.toBase58().slice(0, 5).toUpperCase(), decimals, image: metadata?.image || null, supplyUi: uiAmount(total, decimals), supplyRaw: total.toString(), isPumpFun, graduated, curveProgressPct: progress }, lifecycle: { graduation: graduationBuy ? { signature: graduationBuy.signature, at: graduationBuy.at, buyer: graduationBuy.owner } : null }, addresses: { bondingCurve: isPumpFun ? bondingCurve.toBase58() : null, associatedBondingCurve: isPumpFun ? associatedBondingCurve.toBase58() : null, creator }, split: { pumpfunCurvePctOfSupply: isPumpFun ? pct(curveBalance, total) : null, fomoPctOfSupply: pct(fomoRaw, total), fomoPctOfScanned: pct(fomoRaw, scannedRaw), creatorPctOfSupply: pct(creatorRaw, total), lpPctOfSupply: 0, otherPctOfSupply: pct(otherRaw, total), scannedHolderCount: owners.length, fomoCheckedHolderCount: fomoLookup.length, coverageNote: usingFullHolderIndex ? `Full holder index: ${owners.length} owners. FOMO labels checked for ${fomoLookup.length}; verified FOMO supply is currently a lower bound until label enrichment completes.` : `Fast view: top ${owners.length} token accounts only. Full holder indexing is pending; FOMO supply is a lower bound.` }, mix, venues: { curveBuyers: curveOwners.size, pumpswapBuyers: graduated && dunePending ? null : pumpswapOwners.size, curveOnly, pumpswapOnly: graduated && dunePending ? null : pumpswapOnly, bothVenues: graduated && dunePending ? null : bothVenues, newAfterGrad: graduated && dunePending ? null : pumpswapOnly }, pumpfunBuyers: { uniqueBuyers: new Set(buyerRows.map(x => x.owner)).size, buyTxCount: buyerRows.reduce((sum, x) => sum + x.buyTxCount, 0), stillHoldingCount: buyerRows.filter(x => x.stillHolds).length, stillHoldingPctOfSupply: pct(buyerRows.filter(x => x.stillHolds).reduce((sum, x) => sum + (ownerMap.get(x.owner)?.amount || 0n), 0n), total), fomoBuyerCount: buyerRows.filter(x => x.bucket === "fomo").length, truncated: history.truncated || dunePending, method: dunePending ? "helius_curve_plus_dune_pending" : "helius_curve_plus_dune" , wallets: buyerRows.slice(0, 50) }, pumpswapBuyers: { program: PUMPSWAP_PROGRAM, uniqueBuyers: graduated && dunePending ? null : pumpswapOwners.size, truncated: dunePending, method: dunePending ? "dune_indexing" : "dune_indexed" }, indexing: { curve: heliusProgress, holders: holderProgress }, analytics: { fomoSupplyRaw: fomoRaw.toString(), preGradSupplyRaw: preGradSupplyRaw.toString(), postGradSupplyRaw: postGradSupplyRaw.toString(), holderIndexComplete: usingFullHolderIndex && holderProgress.state === "completed" }, holders, updatedAt: new Date().toISOString(), warnings };
+  return { ok: true, mint: mint.toBase58(), token: { name: metadata?.name || "Solana token", symbol: metadata?.symbol || mint.toBase58().slice(0, 5).toUpperCase(), decimals, image: metadata?.image || null, supplyUi: uiAmount(total, decimals), supplyRaw: total.toString(), isPumpFun, graduated, curveProgressPct: progress }, lifecycle: { graduation: graduationBuy ? { signature: graduationBuy.signature, at: graduationBuy.at, buyer: graduationBuy.owner } : null }, addresses: { bondingCurve: isPumpFun ? bondingCurve.toBase58() : null, associatedBondingCurve: isPumpFun ? associatedBondingCurve.toBase58() : null, creator }, split: { pumpfunCurvePctOfSupply: isPumpFun ? pct(curveBalance, total) : null, fomoPctOfSupply: pct(fomoRaw, total), fomoPctOfScanned: pct(fomoRaw, scannedRaw), creatorPctOfSupply: pct(creatorRaw, total), lpPctOfSupply: 0, otherPctOfSupply: pct(otherRaw, total), scannedHolderCount: owners.length, fomoCheckedHolderCount: Math.max(fomoLookup.length, labelProgress.checked), coverageNote: usingFullHolderIndex ? `Full holder index: ${owners.length} owners. FOMO labels checked for ${Math.max(fomoLookup.length, labelProgress.checked)}; verified FOMO supply is a lower bound until label enrichment completes.` : `Fast view: top ${owners.length} token accounts only. Full holder indexing is pending; FOMO supply is a lower bound.` }, mix, venues: { curveBuyers: curveOwners.size, pumpswapBuyers: graduated && dunePending ? null : pumpswapOwners.size, curveOnly, pumpswapOnly: graduated && dunePending ? null : pumpswapOnly, bothVenues: graduated && dunePending ? null : bothVenues, newAfterGrad: graduated && dunePending ? null : pumpswapOnly }, pumpfunBuyers: { uniqueBuyers: new Set(buyerRows.map(x => x.owner)).size, buyTxCount: buyerRows.reduce((sum, x) => sum + x.buyTxCount, 0), stillHoldingCount: buyerRows.filter(x => x.stillHolds).length, stillHoldingPctOfSupply: pct(buyerRows.filter(x => x.stillHolds).reduce((sum, x) => sum + (ownerMap.get(x.owner)?.amount || 0n), 0n), total), fomoBuyerCount: buyerRows.filter(x => x.bucket === "fomo").length, truncated: history.truncated || dunePending, method: dunePending ? "helius_curve_plus_dune_pending" : "helius_curve_plus_dune" , wallets: buyerRows.slice(0, 50) }, pumpswapBuyers: { program: PUMPSWAP_PROGRAM, uniqueBuyers: graduated && dunePending ? null : pumpswapOwners.size, truncated: dunePending, method: dunePending ? "dune_indexing" : "dune_indexed" }, indexing: { curve: heliusProgress, holders: holderProgress, labels: labelProgress }, analytics: { fomoSupplyRaw: fomoRaw.toString(), preGradSupplyRaw: preGradSupplyRaw.toString(), postGradSupplyRaw: postGradSupplyRaw.toString(), holderIndexComplete: usingFullHolderIndex && holderProgress.state === "completed" }, holders, updatedAt: new Date().toISOString(), warnings };
 }

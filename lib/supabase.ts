@@ -1,4 +1,5 @@
 import type { ScanResponse, SupplySnapshot } from "@/lib/types";
+import type { FomoHit } from "@/lib/fomo";
 
 const url = process.env.SUPABASE_URL?.replace(/\/$/, "");
 const key = process.env.SUPABASE_SECRET_KEY;
@@ -36,6 +37,7 @@ export type StoredBuyer = {
 };
 
 export type StoredHolder = { owner: string; tokenAccount: string; amount: bigint };
+export type StoredFomoLabel = FomoHit & { wallet: string };
 
 type ScanJob = { id: number; job_type: string; status: string; provider_execution_id: string | null; payload: Record<string, unknown> | null };
 
@@ -61,6 +63,43 @@ export async function loadCurrentHolders(mint: string): Promise<StoredHolder[]> 
   const response = await request(`current_holder_balances?mint=eq.${encodeURIComponent(mint)}&select=owner,token_account,amount_raw&order=amount_raw.desc&limit=20000`);
   const rows = await response.json() as Array<Record<string, unknown>>;
   return rows.map(row => ({ owner: String(row.owner), tokenAccount: String(row.token_account), amount: BigInt(String(row.amount_raw)) }));
+}
+
+export async function loadCurrentHolderPage(mint: string, afterOwner: string | null, limit = 50): Promise<StoredHolder[]> {
+  if (!configured()) return [];
+  const after = afterOwner ? `&owner=gt.${encodeURIComponent(afterOwner)}` : "";
+  const response = await request(`current_holder_balances?mint=eq.${encodeURIComponent(mint)}${after}&select=owner,token_account,amount_raw&order=owner.asc&limit=${limit}`);
+  const rows = await response.json() as Array<Record<string, unknown>>;
+  return rows.map(row => ({ owner: String(row.owner), tokenAccount: String(row.token_account), amount: BigInt(String(row.amount_raw)) }));
+}
+
+export async function loadVerifiedFomoLabels(wallets: string[]): Promise<Map<string, StoredFomoLabel>> {
+  const result = new Map<string, StoredFomoLabel>();
+  if (!configured()) return result;
+  for (let index = 0; index < wallets.length; index += 75) {
+    const group = wallets.slice(index, index + 75);
+    if (!group.length) continue;
+    const response = await request(`wallet_labels?wallet=in.(${group.join(",")})&select=wallet,source,handle,confidence,fomo_identity_id`);
+    const rows = await response.json() as Array<Record<string, unknown>>;
+    rows.forEach(row => {
+      const source = row.source === "fomotags" ? "fomotags" : row.source === "fomoscan" ? "fomoscan" : null;
+      if (!source) return;
+      result.set(String(row.wallet), { wallet: String(row.wallet), source, handle: typeof row.handle === "string" ? row.handle : null, confidence: row.confidence === null || row.confidence === undefined ? null : Number(row.confidence), identityId: typeof row.fomo_identity_id === "string" ? row.fomo_identity_id : null });
+    });
+  }
+  return result;
+}
+
+export async function upsertVerifiedFomoLabels(entries: Array<{ wallet: string; hit: FomoHit }>) {
+  if (!configured() || !entries.length) return;
+  const now = new Date().toISOString();
+  for (let index = 0; index < entries.length; index += 500) {
+    await request("wallet_labels?on_conflict=wallet", {
+      method: "POST",
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify(entries.slice(index, index + 500).map(({ wallet, hit }) => ({ wallet, label: "verified_fomo", source: hit.source, handle: hit.handle, confidence: hit.confidence, fomo_identity_id: hit.identityId, verified_at: now, updated_at: now }))),
+    });
+  }
 }
 
 export async function replaceCurrentHolders(mint: string, holders: Array<{ owner: string; tokenAccount: string; amount: bigint }>, observedAt: string) {

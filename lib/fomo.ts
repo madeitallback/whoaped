@@ -1,4 +1,4 @@
-export type FomoHit = { handle: string | null; confidence: number | null; identityId: string | null };
+export type FomoHit = { handle: string | null; confidence: number | null; identityId: string | null; source: "fomoscan" | "fomotags" };
 const memory = new Map<string, { value: FomoHit | null; expires: number }>();
 
 async function timedFetch(url: string, init: RequestInit, ms = 10_000) {
@@ -15,7 +15,23 @@ export function parseFomoScanProfile(body: unknown): FomoHit | null {
   const identity = source.identity && typeof source.identity === "object" ? source.identity as Record<string, unknown> : identities[0] as Record<string, unknown> | undefined;
   const handle = typeof source.handle === "string" ? source.handle : typeof identity?.handle === "string" ? identity.handle : null;
   const identityId = typeof source.id === "string" ? source.id : typeof identity?.id === "string" ? identity.id : null;
-  return handle || identityId ? { handle, confidence: null, identityId } : null;
+  return handle || identityId ? { handle, confidence: null, identityId, source: "fomoscan" } : null;
+}
+
+const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+
+async function fomoScanWallet(base: string, key: string, wallet: string) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const response = await timedFetch(`${base}/v2/user/wallet/${encodeURIComponent(wallet)}`, { headers: { authorization: `Bearer ${key}`, accept: "application/json" } });
+    if (response.status === 404) return null;
+    if (response.status !== 429) {
+      if (!response.ok) throw new Error(`FomoScan returned ${response.status}`);
+      return parseFomoScanProfile(await response.json());
+    }
+    const retryAfter = Number(response.headers.get("retry-after") || 0);
+    await pause((retryAfter > 0 ? retryAfter * 1000 : 550 * 2 ** attempt) + Math.round(Math.random() * 120));
+  }
+  throw new Error("FomoScan rate limit persisted after retries");
 }
 
 async function resolveFomoScan(wallets: string[]) {
@@ -26,10 +42,7 @@ async function resolveFomoScan(wallets: string[]) {
   for (let i = 0; i < wallets.length; i += 4) {
     const group = wallets.slice(i, i + 4);
     const items = await Promise.all(group.map(async wallet => {
-      const response = await timedFetch(`${base}/v2/user/wallet/${encodeURIComponent(wallet)}`, { headers: { authorization: `Bearer ${key}`, accept: "application/json" } });
-      if (response.status === 404) return [wallet, null] as const;
-      if (!response.ok) throw new Error(`FomoScan returned ${response.status}`);
-      return [wallet, parseFomoScanProfile(await response.json())] as const;
+      return [wallet, await fomoScanWallet(base, key, wallet)] as const;
     }));
     for (const [wallet, value] of items) results.set(wallet, value);
   }
@@ -62,7 +75,7 @@ export async function resolveFomo(wallets: string[]): Promise<Map<string, FomoHi
       const response = await timedFetch(`${base}/v1/resolve`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ wallets: group }) });
       if (!response.ok) throw new Error(`FomoTags returned ${response.status}`);
       const body = await response.json() as { results?: Array<{ wallet?: string; address?: string; handle?: string; username?: string; confidence?: number }> };
-      const found = new Map((body.results || []).map(x => [x.wallet || x.address, { handle: x.handle || x.username || null, confidence: x.confidence ?? null, identityId: null }]));
+      const found = new Map((body.results || []).map(x => [x.wallet || x.address, { handle: x.handle || x.username || null, confidence: x.confidence ?? null, identityId: null, source: "fomotags" as const }]));
       for (const wallet of group) {
         const value = found.get(wallet) || null;
         memory.set(wallet, { value, expires: Date.now() + 86_400_000 });

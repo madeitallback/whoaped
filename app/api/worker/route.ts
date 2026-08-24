@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { advanceDuneJobs, duneIndexState } from "@/lib/dune";
 import { advanceHeliusJobs, heliusIndexState } from "@/lib/helius-index";
 import { advanceHolderJobs, holderIndexProgress } from "@/lib/holder-index";
+import { advanceLabelJobs, enqueueLabelIndex, labelIndexProgress } from "@/lib/label-index";
 import { claimActiveJobMints } from "@/lib/supabase";
 
 export const runtime = "nodejs";
@@ -18,12 +19,14 @@ export async function POST(request: NextRequest) {
   if (!authorized(request)) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   try {
     const mints = await claimActiveJobMints(2);
-    const jobs = [] as Array<{ mint: string; dune: string; helius: string; holders: string }>;
+    const jobs = [] as Array<{ mint: string; dune: string; helius: string; holders: string; labels: string }>;
     for (const mint of mints) {
       await advanceDuneJobs(mint);
       await advanceHeliusJobs(mint);
       await advanceHolderJobs(mint);
-      jobs.push({ mint, dune: await duneIndexState(mint), helius: await heliusIndexState(mint), holders: (await holderIndexProgress(mint)).state });
+      if ((await holderIndexProgress(mint)).state === "completed") await enqueueLabelIndex(mint);
+      await advanceLabelJobs(mint);
+      jobs.push({ mint, dune: await duneIndexState(mint), helius: await heliusIndexState(mint), holders: (await holderIndexProgress(mint)).state, labels: (await labelIndexProgress(mint)).state });
     }
     return NextResponse.json({ ok: true, jobs });
   } catch (error) {

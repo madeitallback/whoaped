@@ -39,6 +39,6 @@ describe("Pump buy layouts", () => {
 
 describe("FomoScan v2 profile parsing", () => {
   it("keeps the stable identity id and handle from the v2 response", () => {
-    expect(parseFomoScanProfile({ id: "profile-123", handle: "trader", solanaAddress: "wallet" })).toEqual({ identityId: "profile-123", handle: "trader", confidence: null });
+    expect(parseFomoScanProfile({ id: "profile-123", handle: "trader", solanaAddress: "wallet" })).toEqual({ identityId: "profile-123", handle: "trader", confidence: null, source: "fomoscan" });
   });
 });
