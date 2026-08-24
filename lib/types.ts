@@ -35,6 +35,16 @@ export interface BucketMix {
   buyVolumeSol: number | null;
 }
 
+export interface SupplySnapshot {
+  observedAt: string;
+  fomoPctOfSupply: number;
+  preGradPctOfSupply: number;
+  postGradPctOfSupply: number;
+  holderCount: number;
+  fomoCheckedHolderCount: number;
+  holderIndexComplete: boolean;
+}
+
 export interface ScanResponse {
   ok: true;
   mint: string;
@@ -47,6 +57,7 @@ export interface ScanResponse {
   pumpfunBuyers: { uniqueBuyers: number; buyTxCount: number; stillHoldingCount: number; stillHoldingPctOfSupply: number; fomoBuyerCount: number; truncated: boolean; method: string; wallets: Buyer[] };
   pumpswapBuyers: { program: string; uniqueBuyers: number | null; truncated: boolean; method: string };
   indexing: { curve: { state: string; pages: number; scannedSignatures: number; buyersFound: number; decoderVersion: number | null; latestBuy: { signature: string; owner: string; at: string | null } | null }; holders: { state: string; holderCount: number; tokenAccountCount: number; observedAt: string | null } };
+  analytics: { fomoSupplyRaw: string; preGradSupplyRaw: string; postGradSupplyRaw: string; holderIndexComplete: boolean };
   holders: Holder[];
   updatedAt: string;
   warnings: string[];

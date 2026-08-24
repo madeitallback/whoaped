@@ -1,4 +1,4 @@
-import type { ScanResponse } from "@/lib/types";
+import type { ScanResponse, SupplySnapshot } from "@/lib/types";
 
 const url = process.env.SUPABASE_URL?.replace(/\/$/, "");
 const key = process.env.SUPABASE_SECRET_KEY;
@@ -73,6 +73,26 @@ export async function replaceCurrentHolders(mint: string, holders: Array<{ owner
       body: JSON.stringify(holders.slice(index, index + 500).map(holder => ({ mint, owner: holder.owner, token_account: holder.tokenAccount, amount_raw: holder.amount.toString(), observed_at: observedAt }))),
     });
   }
+}
+
+function rawPct(raw: string, total: string) {
+  const denominator = BigInt(total);
+  return denominator === 0n ? 0 : Number(BigInt(raw) * 10000n / denominator) / 100;
+}
+
+export async function loadSupplySnapshots(mint: string): Promise<SupplySnapshot[]> {
+  if (!configured()) return [];
+  const response = await request(`supply_snapshots?mint=eq.${encodeURIComponent(mint)}&select=observed_at,total_supply_raw,verified_fomo_supply_raw,pre_grad_supply_raw,post_grad_supply_raw,holder_count,fomo_checked_holder_count,holder_index_complete&order=observed_at.asc&limit=1000`);
+  const rows = await response.json() as Array<Record<string, unknown>>;
+  return rows.map(row => ({
+    observedAt: String(row.observed_at),
+    fomoPctOfSupply: rawPct(String(row.verified_fomo_supply_raw), String(row.total_supply_raw)),
+    preGradPctOfSupply: rawPct(String(row.pre_grad_supply_raw), String(row.total_supply_raw)),
+    postGradPctOfSupply: rawPct(String(row.post_grad_supply_raw), String(row.total_supply_raw)),
+    holderCount: Number(row.holder_count || 0),
+    fomoCheckedHolderCount: Number(row.fomo_checked_holder_count || 0),
+    holderIndexComplete: Boolean(row.holder_index_complete),
+  }));
 }
 
 export async function listDuneJobs(mint: string, statuses?: string[]): Promise<ScanJob[]> {
@@ -242,6 +262,28 @@ export async function persistScan(scan: ScanResponse): Promise<void> {
       headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
       body: JSON.stringify(buyers),
     });
+  }
+
+  // Snapshots are optional until the matching migration has been applied. A
+  // missing analytics table must never make a live scan fail.
+  try {
+    await request("supply_snapshots", {
+      method: "POST",
+      headers: { Prefer: "return=minimal" },
+      body: JSON.stringify({
+        mint: scan.mint,
+        observed_at: now,
+        total_supply_raw: scan.token.supplyRaw,
+        verified_fomo_supply_raw: scan.analytics.fomoSupplyRaw,
+        pre_grad_supply_raw: scan.analytics.preGradSupplyRaw,
+        post_grad_supply_raw: scan.analytics.postGradSupplyRaw,
+        holder_count: scan.split.scannedHolderCount,
+        fomo_checked_holder_count: scan.split.fomoCheckedHolderCount,
+        holder_index_complete: scan.analytics.holderIndexComplete,
+      }),
+    });
+  } catch {
+    // The first deployment can run before the chart migration is installed.
   }
 }
 

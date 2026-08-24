@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import type { Buyer, ScanResponse } from "@/lib/types";
+import type { Buyer, ScanResponse, SupplySnapshot } from "@/lib/types";
 
 type Candidate = { mint: string; name: string; symbol: string; image: string | null; mc: number | null };
 type ApiError = { ok: false; code: string; error: string; candidates?: Candidate[] };
@@ -19,6 +19,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<"holders" | "buyers">("holders");
   const [filter, setFilter] = useState("all");
+  const [chart, setChart] = useState<SupplySnapshot[]>([]);
 
   async function scan(value = input) {
     setLoading(true); setError(null); setCandidates([]);
@@ -42,6 +43,13 @@ export default function Home() {
     }, 15_000);
     return () => window.clearInterval(timer);
   }, [data]);
+  useEffect(() => {
+    if (!data) { setChart([]); return; }
+    void fetch(`/api/chart?mint=${encodeURIComponent(data.mint)}`)
+      .then(response => response.ok ? response.json() as Promise<{ ok: true; points: SupplySnapshot[] }> : null)
+      .then(body => setChart(body?.points || []))
+      .catch(() => setChart([]));
+  }, [data?.mint]);
   function submit(event: FormEvent) { event.preventDefault(); void scan(); }
   function copy(value: string) { navigator.clipboard?.writeText(value); }
   const rows = useMemo(() => {
@@ -80,6 +88,7 @@ export default function Home() {
         <Metric title="New after grad" value={data.venues.newAfterGrad === null ? "—" : number(data.venues.newAfterGrad)} sub="PumpSwap-only wallets" />
         <Metric title="Creator balance" value={pct(data.split.creatorPctOfSupply)} sub={data.addresses.creator ? short(data.addresses.creator) : "Not detected"} accent="pink" />
       </section>
+      <SupplyChart points={chart} />
       <section className="section-head"><div><p className="eyebrow">ADDRESS INTELLIGENCE</p><h2>Who is still holding?</h2></div><div className="tabs"><button className={tab === "holders" ? "active" : ""} onClick={() => { setTab("holders"); setFilter("all"); }}>Holders <small>{number(data.split.scannedHolderCount)}</small></button><button className={tab === "buyers" ? "active" : ""} onClick={() => { setTab("buyers"); setFilter("all"); }}>Buyers <small>{data.pumpfunBuyers.uniqueBuyers}</small></button></div></section>
       <section className="table-card"><div className="filters">{(tab === "holders" ? [["all", "All"], ["fomo", "FOMO"], ["pumpfun_curve", "Curve"], ["creator", "Creator"], ["other", "Other"]] : [["all", "All"], ["fomo", "FOMO"], ["pumpfun", "Curve"], ["curve_only", "Pre only"], ["pumpswap_only", "Post only"], ["both", "Both"], ["holding", "Still holding"]]).map(([key, label]) => <button key={key} className={filter === key ? "selected" : ""} onClick={() => setFilter(key)}>{label}</button>)}</div>
         <div className="table-wrap"><table><thead><tr><th>#</th><th>Label</th><th>Owner</th><th>Handle</th>{tab === "buyers" && <th>Phase</th>}<th>{tab === "holders" ? "Tokens" : "Buy txs"}</th><th>% supply</th><th>Links</th></tr></thead><tbody>{rows.map((row, index) => <Row key={row.owner} row={row} index={index} buyers={tab === "buyers"} copy={copy} />)}</tbody></table></div>
@@ -93,5 +102,11 @@ export default function Home() {
 
 function MixCard({ label, tone, data, detail }: { label: string; tone: string; data: ScanResponse["mix"]["fomo"]; detail: string }) { return <article className={`mix ${tone}`}><p>{label}</p><div className="mix-value">{number(data.buyers)} <small>{pct(data.pctOfBuyers)}</small></div><span>{detail}</span><div className="mix-bottom"><div><b>{pct(data.holdRate)}</b><small>hold rate</small></div><div><b>{pct(data.pctOfSupply)}</b><small>supply held</small></div></div></article>; }
 function Metric({ title, value, sub, accent }: { title: string; value: string; sub: string; accent?: string }) { return <article className={`metric ${accent || ""}`}><p>{title}</p><strong>{value}</strong><small>{sub}</small></article>; }
+function SupplyChart({ points }: { points: SupplySnapshot[] }) {
+  const latest = points.at(-1);
+  const width = 700, height = 190, inset = 18;
+  const line = (field: keyof Pick<SupplySnapshot, "fomoPctOfSupply" | "preGradPctOfSupply" | "postGradPctOfSupply">) => points.map((point, index) => `${inset + (width - inset * 2) * (points.length === 1 ? .5 : index / (points.length - 1))},${height - inset - Math.min(100, point[field]) / 100 * (height - inset * 2)}`).join(" ");
+  return <section className="table-card" style={{ padding: 20, marginTop: 18 }}><div className="section-head" style={{ marginBottom: 10 }}><div><p className="eyebrow">OWNERSHIP HISTORY</p><h2>Supply held over time</h2></div><small className="muted">{latest ? `${number(latest.holderCount)} holders · ${latest.holderIndexComplete ? "complete holder index" : "partial index"}` : "Snapshots start after the first scan"}</small></div>{points.length ? <><svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Supply share history" style={{ width: "100%", height: 220, display: "block" }}><line x1={inset} x2={width - inset} y1={height - inset} y2={height - inset} stroke="rgba(255,255,255,.15)" /><polyline points={line("fomoPctOfSupply")} fill="none" stroke="#ff4ea3" strokeWidth="3" /><polyline points={line("preGradPctOfSupply")} fill="none" stroke="#ffc83d" strokeWidth="3" /><polyline points={line("postGradPctOfSupply")} fill="none" stroke="#67a8ff" strokeWidth="3" /></svg><div className="filters" style={{ padding: 0 }}><span className="handle">● FOMO {pct(latest?.fomoPctOfSupply || 0)}</span><span style={{ color: "#ffc83d" }}>● Pre-grad {pct(latest?.preGradPctOfSupply || 0)}</span><span style={{ color: "#67a8ff" }}>● Post-grad {pct(latest?.postGradPctOfSupply || 0)}</span><span className="muted">{time(points[0].observedAt)} → {time(latest!.observedAt)}</span></div></> : <p className="empty">No ownership snapshots yet. The chart begins automatically as this token is indexed.</p>}</section>;
+}
 function TokenIcon({ image, symbol }: { image: string | null; symbol: string }) { const [failed, setFailed] = useState(false); return <div className="token-icon" style={{ overflow: "hidden" }}>{image && !failed ? <img src={image} alt={`${symbol} token`} onError={() => setFailed(true)} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : "◎"}</div>; }
 function Row({ row, index, buyers, copy }: { row: Buyer | ScanResponse["holders"][number]; index: number; buyers: boolean; copy: (x: string) => void }) { const label = buyers ? (row as Buyer).bucket : (row as ScanResponse["holders"][number]).label; const handle = row.fomoHandle; const phase = buyers ? ({ curve_only: "Pre only", pumpswap_only: "Post only", both: "Both", other_dex: "DEX" } as const)[(row as Buyer).phase] : null; return <tr><td>{index + 1}</td><td><span className={`pill ${label}`}>{label.replace("pumpfun_", "")}</span></td><td><button className="owner" onClick={() => copy(row.owner)}>{short(row.owner)} <span>⧉</span></button></td><td>{handle ? <span className="handle">@{handle}</span> : <span className="muted">—</span>}</td>{buyers && <td>{phase}</td>}<td>{buyers ? number((row as Buyer).buyTxCount) : number((row as ScanResponse["holders"][number]).uiAmount)}</td><td>{pct(row.pctOfSupply)}</td><td><a href={`https://solscan.io/account/${row.owner}`} target="_blank" rel="noreferrer">↗</a></td></tr>; }
