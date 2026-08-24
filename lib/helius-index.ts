@@ -1,12 +1,12 @@
 import { PublicKey } from "@solana/web3.js";
-import { findCurveBuyerPage } from "@/lib/buyers";
+import { findCurveBuyerPage, type CurveBuyEvent } from "@/lib/buyers";
 import { createHeliusJob, listHeliusJobs, updateScanJob, upsertHeliusCurveBuyers } from "@/lib/supabase";
 import { connection } from "@/lib/solana";
 
 const CURVE_DECODER_VERSION = 2;
-type CursorPayload = { curve?: string; cursor?: string | null; pages?: number; scanned_signatures?: number; buyers_found?: number; decoder_version?: number };
+type CursorPayload = { curve?: string; cursor?: string | null; pages?: number; scanned_signatures?: number; buyers_found?: number; decoder_version?: number; latest_curve_buy?: CurveBuyEvent | null };
 
-export type CurveIndexProgress = { state: string; pages: number; scannedSignatures: number; buyersFound: number; decoderVersion: number | null };
+export type CurveIndexProgress = { state: string; pages: number; scannedSignatures: number; buyersFound: number; decoderVersion: number | null; latestBuy: CurveBuyEvent | null };
 
 function curvePayload(job: { payload: Record<string, unknown> | null }) { return (job.payload || {}) as CursorPayload; }
 
@@ -19,13 +19,13 @@ export async function enqueueHeliusCurveIndex(mint: string, curve: string | null
     if ((payload.decoder_version || 1) < CURVE_DECODER_VERSION && (latest.status === "completed" || latest.status === "queued")) {
       await updateScanJob(latest.id, {
         status: "queued", result: null, error: null,
-        payload: { curve: payload.curve || curve, cursor: null, pages: 0, scanned_signatures: 0, buyers_found: 0, decoder_version: CURVE_DECODER_VERSION },
+        payload: { curve: payload.curve || curve, cursor: null, pages: 0, scanned_signatures: 0, buyers_found: 0, decoder_version: CURVE_DECODER_VERSION, latest_curve_buy: null },
       });
       return true;
     }
     return false;
   }
-  await createHeliusJob(mint, "curve_history", { curve, cursor: null, pages: 0, scanned_signatures: 0, buyers_found: 0, decoder_version: CURVE_DECODER_VERSION });
+  await createHeliusJob(mint, "curve_history", { curve, cursor: null, pages: 0, scanned_signatures: 0, buyers_found: 0, decoder_version: CURVE_DECODER_VERSION, latest_curve_buy: null });
   return true;
 }
 
@@ -37,7 +37,7 @@ export async function advanceHeliusJobs(mint: string) {
   if ((payload.decoder_version || 1) < CURVE_DECODER_VERSION) {
     await updateScanJob(job.id, {
       status: "queued", result: null, error: null,
-      payload: { curve: payload.curve, cursor: null, pages: 0, scanned_signatures: 0, buyers_found: 0, decoder_version: CURVE_DECODER_VERSION },
+      payload: { curve: payload.curve, cursor: null, pages: 0, scanned_signatures: 0, buyers_found: 0, decoder_version: CURVE_DECODER_VERSION, latest_curve_buy: null },
     });
     return true;
   }
@@ -57,6 +57,7 @@ export async function advanceHeliusJobs(mint: string) {
         scanned_signatures: (payload.scanned_signatures || 0) + page.scannedSignatures,
         buyers_found: (payload.buyers_found || 0) + page.buyers.length,
         decoder_version: CURVE_DECODER_VERSION,
+        latest_curve_buy: payload.latest_curve_buy || page.latestBuy,
       },
       result: page.nextCursor ? null : { complete: true },
     });
@@ -74,7 +75,7 @@ export async function heliusIndexState(mint: string) {
 export async function heliusIndexProgress(mint: string): Promise<CurveIndexProgress> {
   const jobs = await listHeliusJobs(mint);
   const job = [...jobs].reverse().find(item => item.job_type === "curve_history" && item.status !== "cancelled");
-  if (!job) return { state: "not_started", pages: 0, scannedSignatures: 0, buyersFound: 0, decoderVersion: null };
+  if (!job) return { state: "not_started", pages: 0, scannedSignatures: 0, buyersFound: 0, decoderVersion: null, latestBuy: null };
   const payload = curvePayload(job);
   return {
     state: job.status,
@@ -82,5 +83,6 @@ export async function heliusIndexProgress(mint: string): Promise<CurveIndexProgr
     scannedSignatures: Number(payload.scanned_signatures || 0),
     buyersFound: Number(payload.buyers_found || 0),
     decoderVersion: payload.decoder_version ? Number(payload.decoder_version) : 1,
+    latestBuy: payload.latest_curve_buy || null,
   };
 }

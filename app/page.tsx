@@ -9,6 +9,7 @@ type ApiError = { ok: false; code: string; error: string; candidates?: Candidate
 const short = (address: string) => `${address.slice(0, 5)}…${address.slice(-4)}`;
 const number = (value: number) => new Intl.NumberFormat("en-US", { maximumFractionDigits: value < 100 ? 2 : 0 }).format(value);
 const pct = (value: number) => `${number(value)}%`;
+const time = (value: string | null) => value ? new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "completion transaction indexed";
 
 export default function Home() {
   const [input, setInput] = useState("");
@@ -73,7 +74,7 @@ export default function Home() {
       <p className="coverage">ⓘ {data.split.coverageNote}</p>
       {data.token.isPumpFun && <p className="coverage">⌁ Curve index: {data.indexing.curve.state === "completed" ? `complete · ${number(data.indexing.curve.buyersFound)} buyers found` : `${data.indexing.curve.state} · ${number(data.indexing.curve.scannedSignatures)} signatures scanned · ${number(data.indexing.curve.buyersFound)} buyers found`}</p>}
       <section className="context-grid">
-        <Metric title="Curve leftover" value={data.split.pumpfunCurvePctOfSupply === null ? "N/A" : pct(data.split.pumpfunCurvePctOfSupply)} sub={data.token.curveProgressPct !== null ? `${pct(data.token.curveProgressPct)} to graduation` : "Not a Pump.fun curve"} accent="yellow" />
+        <Metric title="Curve leftover" value={data.split.pumpfunCurvePctOfSupply === null ? "N/A" : pct(data.split.pumpfunCurvePctOfSupply)} sub={data.lifecycle.graduation ? `Graduated ${time(data.lifecycle.graduation.at)} · ${short(data.lifecycle.graduation.buyer)}` : data.token.curveProgressPct !== null ? `${pct(data.token.curveProgressPct)} to graduation` : "Not a Pump.fun curve"} accent="yellow" />
         <Metric title="PumpSwap buyers" value={data.venues.pumpswapBuyers === null ? "INDEX NEEDED" : number(data.venues.pumpswapBuyers)} sub={data.token.graduated ? "Post-grad indexing coming next" : "N/A while on curve"} />
         <Metric title="New after grad" value={data.venues.newAfterGrad === null ? "—" : number(data.venues.newAfterGrad)} sub="PumpSwap-only wallets" />
         <Metric title="Creator balance" value={pct(data.split.creatorPctOfSupply)} sub={data.addresses.creator ? short(data.addresses.creator) : "Not detected"} accent="pink" />

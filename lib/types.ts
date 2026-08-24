@@ -37,13 +37,14 @@ export interface ScanResponse {
   ok: true;
   mint: string;
   token: { name: string; symbol: string; decimals: number; image: string | null; supplyUi: number; supplyRaw: string; isPumpFun: boolean; graduated: boolean | null; curveProgressPct: number | null };
+  lifecycle: { graduation: { signature: string; at: string | null; buyer: string } | null };
   addresses: { bondingCurve: string | null; associatedBondingCurve: string | null; creator: string | null };
   split: { pumpfunCurvePctOfSupply: number | null; fomoPctOfSupply: number; fomoPctOfScanned: number; creatorPctOfSupply: number; lpPctOfSupply: number; otherPctOfSupply: number; scannedHolderCount: number; coverageNote: string };
   mix: { totalBuyers: number; fomo: BucketMix; pumpfun: BucketMix; other: BucketMix };
   venues: { curveBuyers: number; pumpswapBuyers: number | null; curveOnly: number; pumpswapOnly: number | null; bothVenues: number | null; newAfterGrad: number | null };
   pumpfunBuyers: { uniqueBuyers: number; buyTxCount: number; stillHoldingCount: number; stillHoldingPctOfSupply: number; fomoBuyerCount: number; truncated: boolean; method: string; wallets: Buyer[] };
   pumpswapBuyers: { program: string; uniqueBuyers: number | null; truncated: boolean; method: string };
-  indexing: { curve: { state: string; pages: number; scannedSignatures: number; buyersFound: number; decoderVersion: number | null } };
+  indexing: { curve: { state: string; pages: number; scannedSignatures: number; buyersFound: number; decoderVersion: number | null; latestBuy: { signature: string; owner: string; at: string | null } | null } };
   holders: Holder[];
   updatedAt: string;
   warnings: string[];
