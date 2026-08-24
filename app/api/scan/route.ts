@@ -3,7 +3,7 @@ import { PublicKey } from "@solana/web3.js";
 import { cached, store } from "@/lib/cache";
 import { resolveFomo, type FomoHit } from "@/lib/fomo";
 import { findCurveBuyers } from "@/lib/buyers";
-import { loadCurrentHolders, loadStoredBuyers, loadVerifiedFomoLabels, loadVerifiedFomoLabelsForMint, persistScan } from "@/lib/supabase";
+import { loadCurrentHolderBalances, loadCurrentHolderSummary, loadCurrentHolders, loadStoredBuyers, loadVerifiedFomoLabels, loadVerifiedFomoLabelsForMint, persistScan } from "@/lib/supabase";
 import { advanceDuneJobs, duneIndexState, enqueueDuneBalanceHistoryIndex, enqueueDuneBuyerIndex } from "@/lib/dune";
 import { advanceHeliusJobs, enqueueHeliusCurveIndex, heliusIndexProgress, heliusIndexState } from "@/lib/helius-index";
 import { advancePumpSwapJobs, enqueuePumpSwapIndex, postGradIndexProgress } from "@/lib/pumpswap-index";
@@ -115,8 +115,8 @@ async function scan(mint: PublicKey): Promise<ScanResponse> {
   const creator = curve?.creator || null;
   const curveBalance = isPumpFun ? await rpcRetry(() => rpc.getTokenAccountBalance(associatedBondingCurve)).then(x => BigInt(x.value.amount)).catch(() => 0n) : 0n;
   const ownerMap = new Map<string, AccountOwner>();
-  const indexedHolders = await loadCurrentHolders(mint.toBase58()).catch(() => []);
-  const usingFullHolderIndex = indexedHolders.length > 0;
+  const [indexedHolders, storedHolderSummary] = await Promise.all([loadCurrentHolders(mint.toBase58()).catch(() => []), loadCurrentHolderSummary(mint.toBase58()).catch(() => null)]);
+  const usingFullHolderIndex = Boolean(storedHolderSummary && indexedHolders.length > 0);
   if (usingFullHolderIndex) {
     indexedHolders.forEach(holder => ownerMap.set(holder.owner, holder));
   } else {
@@ -138,6 +138,7 @@ async function scan(mint: PublicKey): Promise<ScanResponse> {
   const freshFomo = await resolveFomo(fomoLookup.filter(wallet => !storedFomo.has(wallet)).slice(0, 100));
   const fomo = new Map<string, FomoHit>([...storedFomo.entries()].map(([wallet, hit]) => [wallet, hit] as const));
   freshFomo.forEach((hit, wallet) => fomo.set(wallet, hit));
+  const importantBalances = usingFullHolderIndex ? await loadCurrentHolderBalances(mint.toBase58(), [bondingCurve.toBase58(), ...(creator ? [creator] : [])]).catch(() => new Map()) : new Map();
   let fomoRaw = 0n, creatorRaw = 0n, burnRaw = 0n;
   const allHolders: Holder[] = owners.map((item, index) => {
     const fomoHit = fomo.get(item.owner);
@@ -148,10 +149,12 @@ async function scan(mint: PublicKey): Promise<ScanResponse> {
     else if (fomoHit) { label = "fomo"; fomoRaw += item.amount; }
     return { rank: index + 1, owner: item.owner, tokenAccount: item.tokenAccount, uiAmount: uiAmount(item.amount, decimals), pctOfSupply: pct(item.amount, total), label, fomoHandle: fomoHit?.handle || null, solscan: `https://solscan.io/account/${item.owner}` };
   });
+  if (usingFullHolderIndex && creator) creatorRaw = importantBalances.get(creator)?.amount || 0n;
+  if (usingFullHolderIndex && storedHolderSummary) fomoRaw = storedHolderSummary.verifiedFomoRaw;
   const holders = allHolders.slice(0, 500);
   const knownRaw = curveBalance + fomoRaw + creatorRaw + burnRaw;
   const otherRaw = total > knownRaw ? total - knownRaw : 0n;
-  const scannedRaw = owners.reduce((sum, x) => sum + x.amount, 0n);
+  const scannedRaw = usingFullHolderIndex && storedHolderSummary ? storedHolderSummary.totalRaw : owners.reduce((sum, x) => sum + x.amount, 0n);
   const graduated = curve ? curve.complete || curveBalance === 0n : null;
   const initialReserves = 793_100_000n * 10n ** BigInt(decimals);
   const progress = curve ? Math.max(0, Math.min(100, 100 - Number(curve.realTokenReserves * 10000n / initialReserves) / 100)) : null;
@@ -177,6 +180,8 @@ async function scan(mint: PublicKey): Promise<ScanResponse> {
   };
   history.buyers.forEach(item => rememberBuyer({ ...item, venue: "curve" }));
   indexedBuyers.forEach(item => rememberBuyer(item));
+  const indexedBuyerBalances = usingFullHolderIndex ? await loadCurrentHolderBalances(mint.toBase58(), [...new Set([...mergedBuyers.values()].map(item => item.owner))]).catch(() => new Map()) : new Map();
+  const buyerBalance = (owner: string) => indexedBuyerBalances.get(owner)?.amount || ownerMap.get(owner)?.amount || 0n;
   const buyerLookup = [...new Set([...mergedBuyers.values()].map(x => x.owner))].slice(0, 500);
   const storedBuyerFomo = await loadVerifiedFomoLabels(buyerLookup).catch(() => new Map());
   const freshBuyerFomo = await resolveFomo(buyerLookup.filter(wallet => !storedBuyerFomo.has(wallet)).slice(0, 100));
@@ -194,7 +199,7 @@ async function scan(mint: PublicKey): Promise<ScanResponse> {
     const hasPumpSwap = venues.includes("pumpswap");
     const phase: Buyer["phase"] = hasCurve && hasPumpSwap ? "both" : hasCurve ? "curve_only" : hasPumpSwap ? "pumpswap_only" : "other_dex";
     const primaryVenue: Buyer["venue"] = hasCurve ? "curve" : hasPumpSwap ? "pumpswap" : "other_dex";
-    const held = ownerMap.get(owner)?.amount || 0n;
+    const held = buyerBalance(owner);
     const fomoHit = buyerFomo.get(owner);
     return {
       owner,
@@ -214,7 +219,7 @@ async function scan(mint: PublicKey): Promise<ScanResponse> {
   (Object.keys({ fomo: 1, pumpfun: 1, other: 1 }) as Array<keyof typeof mix>).filter(x => x !== "totalBuyers").forEach(bucket => {
     const rows = buyerRows.filter(x => x.bucket === bucket);
     const holding = rows.filter(x => x.stillHolds);
-    const held = holding.reduce((sum, x) => sum + (ownerMap.get(x.owner)?.amount || 0n), 0n);
+    const held = holding.reduce((sum, x) => sum + buyerBalance(x.owner), 0n);
     mix[bucket] = { buyers: rows.length, pctOfBuyers: buyerRows.length ? Math.round(rows.length / buyerRows.length * 1000) / 10 : 0, stillHolding: holding.length, holdRate: rows.length ? Math.round(holding.length / rows.length * 1000) / 10 : 0, pctOfSupply: pct(held, total), buyVolumeSol: null };
   });
   if (history.truncated) warnings.push("Buyer metrics are based on the most recent 350 curve transactions; older buyers may be omitted.");
@@ -241,7 +246,8 @@ async function scan(mint: PublicKey): Promise<ScanResponse> {
   const curveOnly = [...curveOwners].filter(owner => !pumpswapOwners.has(owner)).length;
   const pumpswapOnly = [...pumpswapOwners].filter(owner => !curveOwners.has(owner)).length;
   const bothVenues = [...curveOwners].filter(owner => pumpswapOwners.has(owner)).length;
-  const preGradSupplyRaw = buyerRows.filter(row => row.venues.includes("curve")).reduce((sum, row) => sum + (ownerMap.get(row.owner)?.amount || 0n), 0n);
-  const postGradSupplyRaw = buyerRows.filter(row => row.venues.includes("pumpswap")).reduce((sum, row) => sum + (ownerMap.get(row.owner)?.amount || 0n), 0n);
-  return { ok: true, mint: mint.toBase58(), token: { name: metadata?.name || "Solana token", symbol: metadata?.symbol || mint.toBase58().slice(0, 5).toUpperCase(), decimals, image: metadata?.image || null, supplyUi: uiAmount(total, decimals), supplyRaw: total.toString(), isPumpFun, graduated, curveProgressPct: progress, priceUsd: metadata?.priceUsd || null, liquidityUsd: metadata?.liquidityUsd || null }, lifecycle: { graduation: graduationBuy ? { signature: graduationBuy.signature, at: graduationBuy.at, buyer: graduationBuy.owner, verification: graduationVerification } : null }, addresses: { bondingCurve: isPumpFun ? bondingCurve.toBase58() : null, associatedBondingCurve: isPumpFun ? associatedBondingCurve.toBase58() : null, creator }, split: { pumpfunCurvePctOfSupply: isPumpFun ? pct(curveBalance, total) : null, fomoPctOfSupply: pct(fomoRaw, total), fomoPctOfScanned: pct(fomoRaw, scannedRaw), creatorPctOfSupply: pct(creatorRaw, total), lpPctOfSupply: 0, otherPctOfSupply: pct(otherRaw, total), scannedHolderCount: owners.length, fomoCheckedHolderCount: Math.max(fomoLookup.length, labelProgress.checked), coverageNote: usingFullHolderIndex ? `Full holder index: ${owners.length} owners. FOMO labels checked for ${Math.max(fomoLookup.length, labelProgress.checked)}; verified FOMO supply is a lower bound until label enrichment completes.` : `Fast view: top ${owners.length} token accounts only. Full holder indexing is pending; FOMO supply is a lower bound.` }, mix, venues: { curveBuyers: curveOwners.size, pumpswapBuyers: graduated && postGradPending ? null : pumpswapOwners.size, curveOnly, pumpswapOnly: graduated && postGradPending ? null : pumpswapOnly, bothVenues: graduated && postGradPending ? null : bothVenues, newAfterGrad: graduated && postGradPending ? null : pumpswapOnly }, pumpfunBuyers: { uniqueBuyers: new Set(buyerRows.map(x => x.owner)).size, buyTxCount: buyerRows.reduce((sum, x) => sum + x.buyTxCount, 0), stillHoldingCount: buyerRows.filter(x => x.stillHolds).length, stillHoldingPctOfSupply: pct(buyerRows.filter(x => x.stillHolds).reduce((sum, x) => sum + (ownerMap.get(x.owner)?.amount || 0n), 0n), total), fomoBuyerCount: buyerRows.filter(x => x.bucket === "fomo").length, truncated: history.truncated || dunePending || postGradPending, method: dunePending ? "helius_curve_plus_dune_pending" : "helius_curve_plus_dune" , wallets: buyerRows.slice(0, 50) }, pumpswapBuyers: { program: PUMPSWAP_PROGRAM, uniqueBuyers: graduated && postGradPending ? null : pumpswapOwners.size, truncated: postGradPending, method: postGradPending ? "helius_indexing" : "helius_indexed_plus_dune" }, indexing: { curve: heliusProgress, postGrad: postGradProgress, holders: holderProgress, labels: labelProgress }, analytics: { fomoSupplyRaw: fomoRaw.toString(), preGradSupplyRaw: preGradSupplyRaw.toString(), postGradSupplyRaw: postGradSupplyRaw.toString(), holderIndexComplete: usingFullHolderIndex && holderProgress.state === "completed" }, holders, updatedAt: new Date().toISOString(), warnings };
+  const preGradSupplyRaw = buyerRows.filter(row => row.venues.includes("curve")).reduce((sum, row) => sum + buyerBalance(row.owner), 0n);
+  const postGradSupplyRaw = buyerRows.filter(row => row.venues.includes("pumpswap")).reduce((sum, row) => sum + buyerBalance(row.owner), 0n);
+  const holderCount = usingFullHolderIndex && storedHolderSummary ? storedHolderSummary.holderCount : owners.length;
+  return { ok: true, mint: mint.toBase58(), token: { name: metadata?.name || "Solana token", symbol: metadata?.symbol || mint.toBase58().slice(0, 5).toUpperCase(), decimals, image: metadata?.image || null, supplyUi: uiAmount(total, decimals), supplyRaw: total.toString(), isPumpFun, graduated, curveProgressPct: progress, priceUsd: metadata?.priceUsd || null, liquidityUsd: metadata?.liquidityUsd || null }, lifecycle: { graduation: graduationBuy ? { signature: graduationBuy.signature, at: graduationBuy.at, buyer: graduationBuy.owner, verification: graduationVerification } : null }, addresses: { bondingCurve: isPumpFun ? bondingCurve.toBase58() : null, associatedBondingCurve: isPumpFun ? associatedBondingCurve.toBase58() : null, creator }, split: { pumpfunCurvePctOfSupply: isPumpFun ? pct(curveBalance, total) : null, fomoPctOfSupply: pct(fomoRaw, total), fomoPctOfScanned: pct(fomoRaw, scannedRaw), creatorPctOfSupply: pct(creatorRaw, total), lpPctOfSupply: 0, otherPctOfSupply: pct(otherRaw, total), scannedHolderCount: holderCount, fomoCheckedHolderCount: Math.max(fomoLookup.length, labelProgress.checked), coverageNote: usingFullHolderIndex ? `Full holder index: ${holderCount} owners (${owners.length} shown). FOMO labels checked for ${Math.max(fomoLookup.length, labelProgress.checked)}; verified FOMO supply is a lower bound until label enrichment completes.` : `Fast view: top ${owners.length} token accounts only. Full holder indexing is pending; FOMO supply is a lower bound.` }, mix, venues: { curveBuyers: curveOwners.size, pumpswapBuyers: graduated && postGradPending ? null : pumpswapOwners.size, curveOnly, pumpswapOnly: graduated && postGradPending ? null : pumpswapOnly, bothVenues: graduated && postGradPending ? null : bothVenues, newAfterGrad: graduated && postGradPending ? null : pumpswapOnly }, pumpfunBuyers: { uniqueBuyers: new Set(buyerRows.map(x => x.owner)).size, buyTxCount: buyerRows.reduce((sum, x) => sum + x.buyTxCount, 0), stillHoldingCount: buyerRows.filter(x => x.stillHolds).length, stillHoldingPctOfSupply: pct(buyerRows.filter(x => x.stillHolds).reduce((sum, x) => sum + buyerBalance(x.owner), 0n), total), fomoBuyerCount: buyerRows.filter(x => x.bucket === "fomo").length, truncated: history.truncated || dunePending || postGradPending, method: dunePending ? "helius_curve_plus_dune_pending" : "helius_curve_plus_dune" , wallets: buyerRows.slice(0, 50) }, pumpswapBuyers: { program: PUMPSWAP_PROGRAM, uniqueBuyers: graduated && postGradPending ? null : pumpswapOwners.size, truncated: postGradPending, method: postGradPending ? "helius_indexing" : "helius_indexed_plus_dune" }, indexing: { curve: heliusProgress, postGrad: postGradProgress, holders: holderProgress, labels: labelProgress }, analytics: { fomoSupplyRaw: fomoRaw.toString(), preGradSupplyRaw: preGradSupplyRaw.toString(), postGradSupplyRaw: postGradSupplyRaw.toString(), holderIndexComplete: usingFullHolderIndex && holderProgress.state === "completed" }, holders, updatedAt: new Date().toISOString(), warnings };
 }

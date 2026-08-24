@@ -9,7 +9,7 @@ create index if not exists wallet_labels_identity_idx on public.wallet_labels (f
 create or replace view public.current_verified_fomo_labels
 with (security_invoker = true)
 as
-select h.mint, l.wallet, l.source, l.handle, l.confidence, l.fomo_identity_id
+select h.mint, l.wallet, l.source, l.handle, l.confidence, l.fomo_identity_id, h.amount_raw
 from public.current_holder_balances h
 join public.wallet_labels l on l.wallet = h.owner
 where l.label = 'verified_fomo'

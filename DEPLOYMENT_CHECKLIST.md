@@ -15,6 +15,7 @@ In Supabase Dashboard → SQL Editor, run these files in this exact order:
 6. `supabase/migrations/202608230004_lifecycle_and_append_only_holders.sql`
 7. `supabase/migrations/202608230005_token_trades.sql`
 8. `supabase/migrations/202608230006_dune_holder_history.sql`
+9. `supabase/migrations/202608230007_holder_summary.sql`
 
 ## 2. Set private Vercel environment variables
 

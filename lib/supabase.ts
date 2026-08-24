@@ -59,11 +59,33 @@ export async function loadStoredBuyers(mint: string): Promise<StoredBuyer[]> {
   }));
 }
 
-export async function loadCurrentHolders(mint: string): Promise<StoredHolder[]> {
+export async function loadCurrentHolders(mint: string, limit = 500): Promise<StoredHolder[]> {
   if (!configured()) return [];
-  const response = await request(`current_holder_balances?mint=eq.${encodeURIComponent(mint)}&select=owner,token_account,amount_raw&order=amount_raw.desc&limit=20000`);
+  const response = await request(`current_holder_balances?mint=eq.${encodeURIComponent(mint)}&select=owner,token_account,amount_raw&order=rank.asc&limit=${limit}`);
   const rows = await response.json() as Array<Record<string, unknown>>;
   return rows.map(row => ({ owner: String(row.owner), tokenAccount: String(row.token_account), amount: BigInt(String(row.amount_raw)) }));
+}
+
+export async function loadCurrentHolderBalances(mint: string, owners: string[]): Promise<Map<string, StoredHolder>> {
+  const result = new Map<string, StoredHolder>();
+  if (!configured()) return result;
+  for (let index = 0; index < owners.length; index += 75) {
+    const group = owners.slice(index, index + 75);
+    if (!group.length) continue;
+    const response = await request(`current_holder_balances?mint=eq.${encodeURIComponent(mint)}&owner=in.(${group.join(",")})&select=owner,token_account,amount_raw`);
+    const rows = await response.json() as Array<Record<string, unknown>>;
+    rows.forEach(row => result.set(String(row.owner), { owner: String(row.owner), tokenAccount: String(row.token_account), amount: BigInt(String(row.amount_raw)) }));
+  }
+  return result;
+}
+
+export type HolderSummary = { holderCount: number; totalRaw: bigint; verifiedFomoRaw: bigint };
+export async function loadCurrentHolderSummary(mint: string): Promise<HolderSummary | null> {
+  if (!configured()) return null;
+  const response = await request(`current_holder_summary?mint=eq.${encodeURIComponent(mint)}&select=holder_count,total_amount_raw,verified_fomo_amount_raw&limit=1`);
+  const row = (await response.json() as Array<Record<string, unknown>>)[0];
+  if (!row) return null;
+  return { holderCount: Number(row.holder_count || 0), totalRaw: BigInt(String(row.total_amount_raw || "0")), verifiedFomoRaw: BigInt(String(row.verified_fomo_amount_raw || "0")) };
 }
 
 export async function loadCurrentHolderPage(mint: string, afterOwner: string | null, limit = 50): Promise<StoredHolder[]> {
@@ -126,7 +148,7 @@ export async function replaceCurrentHolders(mint: string, holders: Array<{ owner
     await request("current_holder_balances", {
       method: "POST",
       headers: { Prefer: "return=minimal" },
-      body: JSON.stringify(holders.slice(index, index + 500).map(holder => ({ mint, owner: holder.owner, token_account: holder.tokenAccount, amount_raw: holder.amount.toString(), observed_at: observedAt }))),
+      body: JSON.stringify(holders.slice(index, index + 500).map((holder, position) => ({ mint, owner: holder.owner, token_account: holder.tokenAccount, amount_raw: holder.amount.toString(), rank: index + position + 1, observed_at: observedAt }))),
     });
   }
 }
