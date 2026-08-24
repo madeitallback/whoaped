@@ -121,7 +121,7 @@ function rawPct(raw: string, total: string) {
 
 export async function loadSupplySnapshots(mint: string): Promise<SupplySnapshot[]> {
   if (!configured()) return [];
-  const response = await request(`supply_snapshots?mint=eq.${encodeURIComponent(mint)}&select=observed_at,total_supply_raw,verified_fomo_supply_raw,pre_grad_supply_raw,post_grad_supply_raw,holder_count,fomo_checked_holder_count,holder_index_complete&order=observed_at.asc&limit=1000`);
+  const response = await request(`supply_snapshots?mint=eq.${encodeURIComponent(mint)}&select=observed_at,total_supply_raw,verified_fomo_supply_raw,pre_grad_supply_raw,post_grad_supply_raw,holder_count,fomo_checked_holder_count,holder_index_complete,price_usd,liquidity_usd&order=observed_at.asc&limit=1000`);
   const rows = await response.json() as Array<Record<string, unknown>>;
   return rows.map(row => ({
     observedAt: String(row.observed_at),
@@ -131,6 +131,8 @@ export async function loadSupplySnapshots(mint: string): Promise<SupplySnapshot[
     holderCount: Number(row.holder_count || 0),
     fomoCheckedHolderCount: Number(row.fomo_checked_holder_count || 0),
     holderIndexComplete: Boolean(row.holder_index_complete),
+    priceUsd: row.price_usd === null || row.price_usd === undefined ? null : Number(row.price_usd),
+    liquidityUsd: row.liquidity_usd === null || row.liquidity_usd === undefined ? null : Number(row.liquidity_usd),
   }));
 }
 
@@ -319,6 +321,8 @@ export async function persistScan(scan: ScanResponse): Promise<void> {
         holder_count: scan.split.scannedHolderCount,
         fomo_checked_holder_count: scan.split.fomoCheckedHolderCount,
         holder_index_complete: scan.analytics.holderIndexComplete,
+        price_usd: scan.token.priceUsd,
+        liquidity_usd: scan.token.liquidityUsd,
       }),
     });
   } catch {

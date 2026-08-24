@@ -10,7 +10,9 @@ create table if not exists public.supply_snapshots (
   post_grad_supply_raw text not null,
   holder_count integer not null,
   fomo_checked_holder_count integer not null,
-  holder_index_complete boolean not null default false
+  holder_index_complete boolean not null default false,
+  price_usd double precision,
+  liquidity_usd double precision
 );
 
 create index if not exists supply_snapshots_mint_time_idx
