@@ -15,6 +15,8 @@ Create these Dune parameters before saving a query:
 2. Run `01_buyers_by_venue.sql` and save it as the canonical buyer-export query.
 3. Run `02_buyer_mix_summary.sql` for the result cards.
 4. Run `03_creator_and_snipers.sql` for the insider/sniper signals.
+5. Optionally run `05_daily_holder_balances.sql` for delayed daily holder
+   history and set its query ID as `DUNE_BALANCE_HISTORY_QUERY_ID`.
 
 The application should use Dune for historical DEX buyers, Helius for current token balances and Pump curve fallback, and FomoScan to label the returned buyer wallets. Do not try to make Dune identify FOMO users: it has no access to FomoScan's verified identity graph.
 

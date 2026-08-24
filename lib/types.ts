@@ -45,6 +45,7 @@ export interface SupplySnapshot {
   holderIndexComplete: boolean;
   priceUsd: number | null;
   liquidityUsd: number | null;
+  source: "observed" | "dune_estimated";
 }
 
 export interface ScanResponse {

@@ -4,7 +4,7 @@ import { cached, store } from "@/lib/cache";
 import { resolveFomo, type FomoHit } from "@/lib/fomo";
 import { findCurveBuyers } from "@/lib/buyers";
 import { loadCurrentHolders, loadStoredBuyers, loadVerifiedFomoLabels, loadVerifiedFomoLabelsForMint, persistScan } from "@/lib/supabase";
-import { advanceDuneJobs, duneIndexState, enqueueDuneBuyerIndex } from "@/lib/dune";
+import { advanceDuneJobs, duneIndexState, enqueueDuneBalanceHistoryIndex, enqueueDuneBuyerIndex } from "@/lib/dune";
 import { advanceHeliusJobs, enqueueHeliusCurveIndex, heliusIndexProgress, heliusIndexState } from "@/lib/helius-index";
 import { advanceHolderJobs, enqueueHolderIndex, holderIndexProgress } from "@/lib/holder-index";
 import { advanceLabelJobs, enqueueLabelIndex, labelIndexProgress } from "@/lib/label-index";
@@ -69,6 +69,9 @@ export async function POST(request: Request) {
     }
     if (await enqueueDuneBuyerIndex(result.mint, result.addresses.creator).catch(() => false)) {
       result.warnings.push("Historical Dune indexing started. Refresh this token shortly for PumpSwap and post-graduation buyers.");
+    }
+    if (await enqueueDuneBalanceHistoryIndex(result.mint).catch(() => false)) {
+      result.warnings.push("Dune daily-balance backfill started. Historical chart points will be marked estimated.");
     }
     if (await enqueueHeliusCurveIndex(result.mint, result.addresses.bondingCurve).catch(() => false)) {
       result.warnings.push("Full Pump.fun curve history indexing started. Each refresh safely processes another historical page.");

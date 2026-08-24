@@ -37,6 +37,7 @@ export type StoredBuyer = {
 };
 
 export type StoredHolder = { owner: string; tokenAccount: string; amount: bigint };
+type HistoricalBalance = { observedAt: string; owner: string; uiAmount: number };
 export type StoredFomoLabel = FomoHit & { wallet: string };
 
 type ScanJob = { id: number; job_type: string; status: string; provider_execution_id: string | null; payload: Record<string, unknown> | null };
@@ -149,6 +150,56 @@ export async function loadSupplySnapshots(mint: string): Promise<SupplySnapshot[
     holderIndexComplete: Boolean(row.holder_index_complete),
     priceUsd: row.price_usd === null || row.price_usd === undefined ? null : Number(row.price_usd),
     liquidityUsd: row.liquidity_usd === null || row.liquidity_usd === undefined ? null : Number(row.liquidity_usd),
+    source: "observed",
+  }));
+}
+
+export async function upsertDuneHistoricalBalances(mint: string, rows: Array<Record<string, unknown>>) {
+  if (!configured() || !rows.length) return;
+  const payload = rows.filter(row => row.snapshot_day && row.owner && row.token_balance_ui !== null && row.token_balance_ui !== undefined).map(row => ({ mint, observed_at: new Date(String(row.snapshot_day)).toISOString(), owner: String(row.owner), ui_amount: Number(row.token_balance_ui), source: "dune_daily" }));
+  for (let index = 0; index < payload.length; index += 500) {
+    await request("dune_holder_balance_history?on_conflict=mint,owner,observed_at", {
+      method: "POST",
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify(payload.slice(index, index + 500)),
+    });
+  }
+}
+
+/** Dune's daily balances are a delayed historical source. Join them with the
+ * locally verified FOMO/buyer labels and mark every resulting point estimated. */
+export async function loadDuneHistoricalSupplySnapshots(mint: string): Promise<SupplySnapshot[]> {
+  if (!configured()) return [];
+  const response = await request(`dune_holder_balance_history?mint=eq.${encodeURIComponent(mint)}&select=observed_at,owner,ui_amount&order=observed_at.asc&limit=50000`);
+  const balances = (await response.json() as Array<Record<string, unknown>>).map(row => ({ observedAt: String(row.observed_at), owner: String(row.owner), uiAmount: Number(row.ui_amount || 0) })) as HistoricalBalance[];
+  if (!balances.length) return [];
+  const buyers = await loadStoredBuyers(mint);
+  const buyerVenues = new Map<string, Set<StoredBuyer["venue"]>>();
+  buyers.forEach(buyer => { const venues = buyerVenues.get(buyer.owner) || new Set<StoredBuyer["venue"]>(); venues.add(buyer.venue); buyerVenues.set(buyer.owner, venues); });
+  const fomo = await loadVerifiedFomoLabels([...new Set(balances.map(balance => balance.owner))]);
+  const perDay = new Map<string, { total: number; fomo: number; pre: number; post: number; holders: Set<string> }>();
+  balances.forEach(balance => {
+    const day = balance.observedAt;
+    const item = perDay.get(day) || { total: 0, fomo: 0, pre: 0, post: 0, holders: new Set<string>() };
+    item.total += balance.uiAmount;
+    if (fomo.has(balance.owner)) item.fomo += balance.uiAmount;
+    const venues = buyerVenues.get(balance.owner);
+    if (venues?.has("curve")) item.pre += balance.uiAmount;
+    if (venues?.has("pumpswap")) item.post += balance.uiAmount;
+    item.holders.add(balance.owner);
+    perDay.set(day, item);
+  });
+  return [...perDay.entries()].map(([observedAt, item]) => ({
+    observedAt,
+    fomoPctOfSupply: item.total ? item.fomo / item.total * 100 : 0,
+    preGradPctOfSupply: item.total ? item.pre / item.total * 100 : 0,
+    postGradPctOfSupply: item.total ? item.post / item.total * 100 : 0,
+    holderCount: item.holders.size,
+    fomoCheckedHolderCount: fomo.size,
+    holderIndexComplete: false,
+    priceUsd: null,
+    liquidityUsd: null,
+    source: "dune_estimated",
   }));
 }
 

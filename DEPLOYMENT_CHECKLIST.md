@@ -12,6 +12,9 @@ In Supabase Dashboard → SQL Editor, run these files in this exact order:
 3. `supabase/migrations/202608230001_holder_index.sql`
 4. `supabase/migrations/202608230002_supply_snapshots.sql`
 5. `supabase/migrations/202608230003_wallet_label_provenance.sql`
+6. `supabase/migrations/202608230004_lifecycle_and_append_only_holders.sql`
+7. `supabase/migrations/202608230005_token_trades.sql`
+8. `supabase/migrations/202608230006_dune_holder_history.sql`
 
 ## 2. Set private Vercel environment variables
 
@@ -24,6 +27,11 @@ them: `HELIUS_API_KEY`, `FOMOSCAN_API_KEY`, `DUNE_API_KEY`,
 key for this project. The `/api/health` response must report
 `"supabaseReady": true`; `supabaseConfigured: true` alone only means that a
 value was provided, not that it works.
+
+For a delayed 90-day daily balance backfill, save
+`dune/05_daily_holder_balances.sql` as a private Dune query and set its ID in
+`DUNE_BALANCE_HISTORY_QUERY_ID`. Leave it unset to avoid Dune balance-query
+usage; fresh first-party snapshots still work after the full holder index.
 
 ## 3. Let the worker run
 

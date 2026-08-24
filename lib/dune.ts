@@ -1,4 +1,4 @@
-import { createDuneJob, listDuneJobs, updateScanJob, upsertDuneBuyers } from "@/lib/supabase";
+import { createDuneJob, listDuneJobs, updateScanJob, upsertDuneBuyers, upsertDuneHistoricalBalances } from "@/lib/supabase";
 
 type DuneExecution = { execution_id?: string; state?: string };
 type DuneStatus = { state?: string; is_execution_finished?: boolean; error?: unknown };
@@ -9,8 +9,10 @@ const MAX_RESULT_ROWS = 50_000;
 const api = "https://api.dune.com/api/v1";
 
 function configured() {
-  return Boolean(process.env.DUNE_API_KEY && process.env.DUNE_BUYERS_QUERY_ID);
+  return Boolean(process.env.DUNE_API_KEY && (process.env.DUNE_BUYERS_QUERY_ID || process.env.DUNE_BALANCE_HISTORY_QUERY_ID));
 }
+function buyersConfigured() { return Boolean(process.env.DUNE_API_KEY && process.env.DUNE_BUYERS_QUERY_ID); }
+function balanceHistoryConfigured() { return Boolean(process.env.DUNE_API_KEY && process.env.DUNE_BALANCE_HISTORY_QUERY_ID); }
 
 async function dune(path: string, init: RequestInit = {}) {
   const key = process.env.DUNE_API_KEY;
@@ -51,7 +53,7 @@ async function fetchAllResults(executionId: string) {
 
 /** Starts one saved Dune buyer query per mint; an existing job is never duplicated. */
 export async function enqueueDuneBuyerIndex(mint: string, creator: string | null) {
-  if (!configured()) return false;
+  if (!buyersConfigured()) return false;
   const existing = await listDuneJobs(mint);
   if (existing.some(job => job.job_type === "historical_buyers" && job.status !== "failed")) return false;
   const queryId = process.env.DUNE_BUYERS_QUERY_ID!;
@@ -67,6 +69,27 @@ export async function enqueueDuneBuyerIndex(mint: string, creator: string | null
     return true;
   } catch (error) {
     await updateScanJob(job.id, { status: "failed", error: error instanceof Error ? error.message : "Dune query could not start" });
+    return false;
+  }
+}
+
+/** Optional historical chart backfill. It is never queued unless the saved
+ * daily-balance query id has been explicitly configured. */
+export async function enqueueDuneBalanceHistoryIndex(mint: string) {
+  if (!balanceHistoryConfigured()) return false;
+  const existing = await listDuneJobs(mint);
+  if (existing.some(job => job.job_type === "historical_balances" && job.status !== "failed")) return false;
+  const queryId = process.env.DUNE_BALANCE_HISTORY_QUERY_ID!;
+  const startDate = new Date(Date.now() - 90 * 24 * 60 * 60_000).toISOString().slice(0, 19).replace("T", " ");
+  const job = await createDuneJob(mint, "historical_balances", { query_id: queryId, parameters: { mint, start_date: startDate } });
+  if (!job) return false;
+  try {
+    const execution = await startQuery(queryId, { mint, start_date: startDate });
+    if (!execution.execution_id) throw new Error("Dune did not return an execution id.");
+    await updateScanJob(job.id, { status: "running", provider_execution_id: execution.execution_id });
+    return true;
+  } catch (error) {
+    await updateScanJob(job.id, { status: "failed", error: error instanceof Error ? error.message : "Dune balance query could not start" });
     return false;
   }
 }
@@ -89,6 +112,7 @@ export async function advanceDuneJobs(mint: string) {
       }
       const rows = await fetchAllResults(job.provider_execution_id);
       if (job.job_type === "historical_buyers") await upsertDuneBuyers(mint, rows);
+      if (job.job_type === "historical_balances") await upsertDuneHistoricalBalances(mint, rows);
       await updateScanJob(job.id, { status: "completed", result: { rows: rows.length } });
       changed = true;
     } catch (error) {
