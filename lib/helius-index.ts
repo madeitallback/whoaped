@@ -1,6 +1,6 @@
 import { PublicKey } from "@solana/web3.js";
 import { findCurveBuyerPage, type CurveBuyEvent } from "@/lib/buyers";
-import { createHeliusJob, listHeliusJobs, updateScanJob, upsertHeliusCurveBuyers } from "@/lib/supabase";
+import { createHeliusJob, listHeliusJobs, updateScanJob, upsertHeliusCurveBuyers, upsertTokenTrades } from "@/lib/supabase";
 import { connection } from "@/lib/solana";
 
 const CURVE_DECODER_VERSION = 2;
@@ -48,6 +48,7 @@ export async function advanceHeliusJobs(mint: string) {
   try {
     const page = await findCurveBuyerPage(connection(), new PublicKey(payload.curve), new PublicKey(mint), payload.cursor);
     await upsertHeliusCurveBuyers(mint, page.buyers);
+    try { await upsertTokenTrades(mint, page.events, "curve", "pre_grad"); } catch { /* token_trades migration may be staged after the base queue */ }
     await updateScanJob(job.id, {
       status: page.nextCursor ? "running" : "completed",
       payload: {

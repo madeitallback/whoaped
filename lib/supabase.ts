@@ -247,6 +247,18 @@ export async function upsertHeliusCurveBuyers(mint: string, buyers: Array<{ owne
   }
 }
 
+export async function upsertTokenTrades(mint: string, events: Array<{ signature: string; owner: string; at: string | null }>, venue: "curve" | "pumpswap" | "other_dex", phase: "pre_grad" | "post_grad") {
+  if (!configured() || !events.length) return;
+  const payload = events.filter(event => Boolean(event.signature)).map(event => ({ mint, signature: event.signature, owner: event.owner, block_time: event.at, venue, side: "buy", phase }));
+  for (let index = 0; index < payload.length; index += 500) {
+    await request("token_trades?on_conflict=mint,signature,owner", {
+      method: "POST",
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify(payload.slice(index, index + 500)),
+    });
+  }
+}
+
 export async function claimActiveJobMints(limit = 2): Promise<string[]> {
   if (!configured()) return [];
   const response = await request("rpc/claim_scan_jobs", {

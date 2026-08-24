@@ -49,6 +49,7 @@ async function parseHeliusSignatures(signatures: Awaited<ReturnType<Connection["
   const key = process.env.HELIUS_API_KEY;
   if (!key) throw new Error("Helius key is missing");
   const byWallet = new Map<string, CurveBuyer>();
+  const events = new Map<string, CurveBuyEvent>();
   const signatureOrder = new Map(signatures.map((item, position) => [item.signature, position]));
   let latestBuy: CurveBuyEvent | null = null;
   let buyTxCount = 0;
@@ -73,6 +74,7 @@ async function parseHeliusSignatures(signatures: Awaited<ReturnType<Connection["
         if (signature && (!latestBuy || (signatureOrder.get(signature) ?? Number.MAX_SAFE_INTEGER) < (signatureOrder.get(latestBuy.signature) ?? Number.MAX_SAFE_INTEGER))) {
           latestBuy = { signature, owner, at };
         }
+        if (signature) events.set(`${signature}:${owner}`, { signature, owner, at });
         const previous = byWallet.get(owner);
         byWallet.set(owner, { owner, buyTxCount: (previous?.buyTxCount || 0) + 1, firstBuyAt: previous?.firstBuyAt || at });
         buyTxCount++;
@@ -81,7 +83,7 @@ async function parseHeliusSignatures(signatures: Awaited<ReturnType<Connection["
     // Free Enhanced Transactions has a small request-per-second allowance.
     if (index + 100 < signatures.length) await sleep(650);
   }
-  return { buyers: [...byWallet.values()], buyTxCount, latestBuy };
+  return { buyers: [...byWallet.values()], buyTxCount, latestBuy, events: [...events.values()] };
 }
 
 async function findCurveBuyersWithHelius(connection: Connection, curve: PublicKey, mint: PublicKey, cap: number) {
@@ -103,6 +105,7 @@ export async function findCurveBuyers(connection: Connection, curve: PublicKey, 
   if (hasDedicatedRpc() && process.env.HELIUS_API_KEY) return findCurveBuyersWithHelius(connection, curve, mint, cap);
   const signatures = await rpcRetry(() => connection.getSignaturesForAddress(curve, { limit: cap }));
   const byWallet = new Map<string, CurveBuyer>();
+  const events = new Map<string, CurveBuyEvent>();
   let latestBuy: CurveBuyEvent | null = null;
   let buyTxCount = 0;
   for (let index = 0; index < signatures.length; index += 5) {
@@ -123,6 +126,7 @@ export async function findCurveBuyers(connection: Connection, curve: PublicKey, 
           const previous = byWallet.get(owner);
           const at = signatures[index + position]?.blockTime ? new Date(signatures[index + position].blockTime! * 1000).toISOString() : null;
           if (!latestBuy) latestBuy = { signature: signatures[index + position].signature, owner, at };
+          events.set(`${signatures[index + position].signature}:${owner}`, { signature: signatures[index + position].signature, owner, at });
           byWallet.set(owner, { owner, buyTxCount: (previous?.buyTxCount || 0) + 1, firstBuyAt: previous?.firstBuyAt || at });
           buyTxCount++;
         } catch { /* unknown instruction encoding; skip it */ }
@@ -131,5 +135,5 @@ export async function findCurveBuyers(connection: Connection, curve: PublicKey, 
     // Avoid sending the next JSON-RPC batch as a burst to public shared endpoints.
     if (index + 5 < signatures.length) await sleep(450);
   }
-  return { buyers: [...byWallet.values()], buyTxCount, latestBuy, truncated: signatures.length >= cap };
+  return { buyers: [...byWallet.values()], buyTxCount, latestBuy, events: [...events.values()], truncated: signatures.length >= cap };
 }
