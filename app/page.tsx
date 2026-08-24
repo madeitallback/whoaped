@@ -81,6 +81,7 @@ export default function Home() {
       </section>
       <p className="coverage">ⓘ {data.split.coverageNote}</p>
       {data.token.isPumpFun && <p className="coverage">⌁ Curve index: {data.indexing.curve.state === "completed" ? `complete · ${number(data.indexing.curve.buyersFound)} buyers found` : `${data.indexing.curve.state} · ${number(data.indexing.curve.scannedSignatures)} signatures scanned · ${number(data.indexing.curve.buyersFound)} buyers found`}</p>}
+      {data.token.graduated && <p className="coverage">⌁ PumpSwap index: {data.indexing.postGrad.state === "completed" ? `complete · ${number(data.indexing.postGrad.buyersFound)} buyers found` : `${data.indexing.postGrad.state} · ${number(data.indexing.postGrad.scannedSignatures)} signatures scanned · ${number(data.indexing.postGrad.buyersFound)} buyers found`}</p>}
       <p className="coverage">⌁ Holder index: {data.indexing.holders.state === "completed" ? `complete · ${number(data.indexing.holders.holderCount)} owners` : `${data.indexing.holders.state} · fast top-account view shown`}</p>
       <p className="coverage">⌁ FOMO labels: {data.indexing.labels.state === "completed" ? `complete · ${number(data.indexing.labels.matched)} verified mappings` : `${data.indexing.labels.state} · ${number(data.indexing.labels.checked)} wallets checked`}</p>
       <section className="context-grid">

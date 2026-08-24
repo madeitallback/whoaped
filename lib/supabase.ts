@@ -298,6 +298,15 @@ export async function upsertHeliusCurveBuyers(mint: string, buyers: Array<{ owne
   }
 }
 
+export async function upsertHeliusPumpSwapBuyers(mint: string, buyers: Array<{ owner: string; buyTxCount: number; firstBuyAt: string | null }>) {
+  if (!configured() || !buyers.length) return;
+  const observedAt = new Date().toISOString();
+  const payload = buyers.map(buyer => ({ mint, owner: buyer.owner, venue: "pumpswap", bucket: "other", buy_tx_count: buyer.buyTxCount, first_buy_at: buyer.firstBuyAt, still_holds: false, ui_amount_held: 0, pct_of_supply: 0, fomo_handle: null, observed_at: observedAt }));
+  for (let index = 0; index < payload.length; index += 500) {
+    await request("token_buyers?on_conflict=mint,owner,venue", { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify(payload.slice(index, index + 500)) });
+  }
+}
+
 export async function upsertTokenTrades(mint: string, events: Array<{ signature: string; owner: string; at: string | null }>, venue: "curve" | "pumpswap" | "other_dex", phase: "pre_grad" | "post_grad") {
   if (!configured() || !events.length) return;
   const payload = events.filter(event => Boolean(event.signature)).map(event => ({ mint, signature: event.signature, owner: event.owner, block_time: event.at, venue, side: "buy", phase }));

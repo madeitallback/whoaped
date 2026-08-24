@@ -3,6 +3,7 @@ import bs58 from "bs58";
 import { describe, expect, it } from "vitest";
 import { deriveBondingCurve, PUMP_PROGRAM } from "../lib/solana";
 import { pumpBuyOwner } from "../lib/buyers";
+import { pumpSwapBuyOwner } from "../lib/pumpswap-index";
 import { parseFomoScanProfile } from "../lib/fomo";
 
 describe("deriveBondingCurve", () => {
@@ -40,5 +41,15 @@ describe("Pump buy layouts", () => {
 describe("FomoScan v2 profile parsing", () => {
   it("keeps the stable identity id and handle from the v2 response", () => {
     expect(parseFomoScanProfile({ id: "profile-123", handle: "trader", solanaAddress: "wallet" })).toEqual({ identityId: "profile-123", handle: "trader", confidence: null, source: "fomoscan" });
+  });
+});
+
+describe("PumpSwap buy layout", () => {
+  it("recognises official buy account positions and rejects another base mint", () => {
+    const mint = "Mint111111111111111111111111111111111111111";
+    const accounts = Array.from({ length: 4 }, (_, index) => `swap-${index}`);
+    accounts[1] = "buyer"; accounts[3] = mint;
+    expect(pumpSwapBuyOwner({ programId: "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA", accounts, data: bs58.encode(Buffer.from("66063d1201daebea", "hex")) }, mint)).toBe("buyer");
+    expect(pumpSwapBuyOwner({ programId: "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA", accounts, data: bs58.encode(Buffer.from("66063d1201daebea", "hex")) }, "wrong-mint")).toBeNull();
   });
 });

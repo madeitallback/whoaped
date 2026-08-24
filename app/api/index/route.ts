@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { advanceDuneJobs, duneIndexState } from "@/lib/dune";
 import { advanceHeliusJobs, heliusIndexProgress, heliusIndexState } from "@/lib/helius-index";
+import { advancePumpSwapJobs, postGradIndexProgress } from "@/lib/pumpswap-index";
 import { advanceHolderJobs, holderIndexProgress } from "@/lib/holder-index";
 import { advanceLabelJobs, labelIndexProgress } from "@/lib/label-index";
 import { parseMintInput } from "@/lib/solana";
@@ -21,11 +22,12 @@ export async function POST(request: Request) {
       lastTick.set(value, now);
       await advanceDuneJobs(value).catch(() => false);
       await advanceHeliusJobs(value).catch(() => false);
+      await advancePumpSwapJobs(value).catch(() => false);
       await advanceHolderJobs(value).catch(() => false);
       await advanceLabelJobs(value).catch(() => false);
     }
-    const [dune, helius, curve, holders, labels] = await Promise.all([duneIndexState(value), heliusIndexState(value), heliusIndexProgress(value), holderIndexProgress(value), labelIndexProgress(value)]);
-    return NextResponse.json({ ok: true, dune, helius, curve, holders, labels });
+    const [dune, helius, curve, postGrad, holders, labels] = await Promise.all([duneIndexState(value), heliusIndexState(value), heliusIndexProgress(value), postGradIndexProgress(value), holderIndexProgress(value), labelIndexProgress(value)]);
+    return NextResponse.json({ ok: true, dune, helius, curve, postGrad, holders, labels });
   } catch {
     return NextResponse.json({ ok: false, error: "Could not advance this index." }, { status: 500 });
   }
