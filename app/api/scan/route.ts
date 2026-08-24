@@ -144,10 +144,33 @@ async function scan(mint: PublicKey): Promise<ScanResponse> {
   history.buyers.forEach(item => rememberBuyer({ ...item, venue: "curve" }));
   indexedBuyers.forEach(item => rememberBuyer(item));
   const buyerFomo = await resolveFomo([...mergedBuyers.values()].map(x => x.owner));
-  const buyerRows: Buyer[] = [...mergedBuyers.values()].map(item => {
-    const held = ownerMap.get(item.owner)?.amount || 0n;
-    const fomoHit = buyerFomo.get(item.owner);
-    return { owner: item.owner, bucket: fomoHit ? "fomo" as const : item.venue === "curve" ? "pumpfun" as const : "other" as const, buyTxCount: item.buyTxCount, firstBuyAt: item.firstBuyAt, stillHolds: held > 0n, uiAmount: uiAmount(held, decimals), pctOfSupply: pct(held, total), fomoHandle: fomoHit?.handle || null, venue: item.venue };
+  const buyersByOwner = new Map<string, Array<{ owner: string; venue: Buyer["venue"]; buyTxCount: number; firstBuyAt: string | null }>>();
+  for (const item of mergedBuyers.values()) {
+    const entries = buyersByOwner.get(item.owner) || [];
+    entries.push(item);
+    buyersByOwner.set(item.owner, entries);
+  }
+  const buyerRows: Buyer[] = [...buyersByOwner.entries()].map(([owner, entries]) => {
+    const venues = entries.map(entry => entry.venue);
+    const hasCurve = venues.includes("curve");
+    const hasPumpSwap = venues.includes("pumpswap");
+    const phase: Buyer["phase"] = hasCurve && hasPumpSwap ? "both" : hasCurve ? "curve_only" : hasPumpSwap ? "pumpswap_only" : "other_dex";
+    const primaryVenue: Buyer["venue"] = hasCurve ? "curve" : hasPumpSwap ? "pumpswap" : "other_dex";
+    const held = ownerMap.get(owner)?.amount || 0n;
+    const fomoHit = buyerFomo.get(owner);
+    return {
+      owner,
+      bucket: fomoHit ? "fomo" as const : hasCurve ? "pumpfun" as const : "other" as const,
+      buyTxCount: entries.reduce((sum, entry) => sum + entry.buyTxCount, 0),
+      firstBuyAt: entries.reduce<string | null>((first, entry) => !first || (entry.firstBuyAt && entry.firstBuyAt < first) ? entry.firstBuyAt : first, null),
+      stillHolds: held > 0n,
+      uiAmount: uiAmount(held, decimals),
+      pctOfSupply: pct(held, total),
+      fomoHandle: fomoHit?.handle || null,
+      venue: primaryVenue,
+      venues,
+      phase,
+    };
   }).sort((a, b) => b.uiAmount - a.uiAmount || b.buyTxCount - a.buyTxCount);
   const mix = { totalBuyers: buyerRows.length, fomo: emptyMix(), pumpfun: emptyMix(), other: emptyMix() };
   (Object.keys({ fomo: 1, pumpfun: 1, other: 1 }) as Array<keyof typeof mix>).filter(x => x !== "totalBuyers").forEach(bucket => {
@@ -165,8 +188,8 @@ async function scan(mint: PublicKey): Promise<ScanResponse> {
   if (graduated && dunePending) warnings.push("Post-graduation buyer indexing is in progress; PumpSwap figures will update after the Dune job completes.");
   if (heliusState === "queued" || heliusState === "running") warnings.push(`Full Pump.fun curve history is indexing (${heliusProgress.scannedSignatures} signatures scanned, ${heliusProgress.buyersFound} buyers found); current curve data is a lower bound.`);
   const graduationBuy = graduated ? history.latestBuy || heliusProgress.latestBuy : null;
-  const curveOwners = new Set(buyerRows.filter(x => x.venue === "curve").map(x => x.owner));
-  const pumpswapOwners = new Set(buyerRows.filter(x => x.venue === "pumpswap").map(x => x.owner));
+  const curveOwners = new Set(buyerRows.filter(x => x.venues.includes("curve")).map(x => x.owner));
+  const pumpswapOwners = new Set(buyerRows.filter(x => x.venues.includes("pumpswap")).map(x => x.owner));
   const curveOnly = [...curveOwners].filter(owner => !pumpswapOwners.has(owner)).length;
   const pumpswapOnly = [...pumpswapOwners].filter(owner => !curveOwners.has(owner)).length;
   const bothVenues = [...curveOwners].filter(owner => pumpswapOwners.has(owner)).length;

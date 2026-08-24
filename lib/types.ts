@@ -22,6 +22,8 @@ export interface Buyer {
   pctOfSupply: number;
   fomoHandle: string | null;
   venue: "curve" | "pumpswap" | "other_dex";
+  venues: Array<"curve" | "pumpswap" | "other_dex">;
+  phase: "curve_only" | "pumpswap_only" | "both" | "other_dex";
 }
 
 export interface BucketMix {
