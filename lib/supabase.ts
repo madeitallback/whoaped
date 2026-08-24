@@ -14,7 +14,6 @@ async function request(path: string, init: RequestInit = {}) {
     ...init,
     headers: {
       apikey: key,
-      Authorization: `Bearer ${key}`,
       "Content-Type": "application/json",
       ...init.headers,
     },
