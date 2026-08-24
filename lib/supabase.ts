@@ -281,6 +281,26 @@ export async function persistScan(scan: ScanResponse): Promise<void> {
     }),
   });
 
+  // Lifecycle is intentionally separate from the mutable scan payload so
+  // downstream jobs and the chart can use a stable graduation marker.
+  try {
+    await request("token_lifecycle?on_conflict=mint", {
+      method: "POST",
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify({
+        mint: scan.mint,
+        lifecycle_status: scan.token.graduated ? "graduated" : scan.token.isPumpFun ? "on_curve" : "not_pumpfun",
+        graduation_signature: scan.lifecycle.graduation?.signature || null,
+        graduation_at: scan.lifecycle.graduation?.at || null,
+        graduation_buyer: scan.lifecycle.graduation?.buyer || null,
+        graduation_verification: scan.lifecycle.graduation?.verification || null,
+        updated_at: now,
+      }),
+    });
+  } catch {
+    // Kept optional during staged migrations, like the analytics snapshots.
+  }
+
   const holders = scan.holders.map((holder) => ({
     mint: scan.mint,
     owner: holder.owner,
@@ -293,7 +313,7 @@ export async function persistScan(scan: ScanResponse): Promise<void> {
     observed_at: now,
   }));
   if (holders.length) {
-    await request("holder_snapshots?on_conflict=mint,owner", {
+    await request("holder_snapshots?on_conflict=mint,owner,observed_at", {
       method: "POST",
       headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
       body: JSON.stringify(holders),

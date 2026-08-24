@@ -51,7 +51,7 @@ export interface ScanResponse {
   ok: true;
   mint: string;
   token: { name: string; symbol: string; decimals: number; image: string | null; supplyUi: number; supplyRaw: string; isPumpFun: boolean; graduated: boolean | null; curveProgressPct: number | null; priceUsd: number | null; liquidityUsd: number | null };
-  lifecycle: { graduation: { signature: string; at: string | null; buyer: string } | null };
+  lifecycle: { graduation: { signature: string; at: string | null; buyer: string; verification: "candidate" | "confirmed" } | null };
   addresses: { bondingCurve: string | null; associatedBondingCurve: string | null; creator: string | null };
   split: { pumpfunCurvePctOfSupply: number | null; fomoPctOfSupply: number; fomoPctOfScanned: number; creatorPctOfSupply: number; lpPctOfSupply: number; otherPctOfSupply: number; scannedHolderCount: number; fomoCheckedHolderCount: number; coverageNote: string };
   mix: { totalBuyers: number; fomo: BucketMix; pumpfun: BucketMix; other: BucketMix };
