@@ -1,5 +1,5 @@
 import { PublicKey } from "@solana/web3.js";
-import { connection, rpcRetry } from "@/lib/solana";
+import { connection, hasDedicatedRpc, rpcRetry, rpcUrl } from "@/lib/solana";
 import { createHeliusJob, listHeliusJobs, replaceCurrentHolders, updateScanJob } from "@/lib/supabase";
 
 export type IndexedHolder = { owner: string; tokenAccount: string; amount: bigint };
@@ -13,9 +13,39 @@ export type HolderIndexProgress = {
 };
 
 const REFRESH_AFTER_MS = 5 * 60 * 1000;
+const HOLDER_PAGE_SIZE = 1_000;
+
+type ProgramAccountPage = {
+  accounts: Array<{ pubkey: string; account: { data: [string, "base64"] } }>;
+  paginationKey: string | null;
+};
 
 function payloadValue(payload: Record<string, unknown> | null, key: string) {
   return payload?.[key];
+}
+
+async function getProgramAccountsPage(program: string, mint: string, paginationKey: string | null): Promise<ProgramAccountPage> {
+  const response = await fetch(rpcUrl(), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: `holders-${paginationKey || "first"}`,
+      method: "getProgramAccountsV2",
+      params: [program, {
+        commitment: "confirmed",
+        encoding: "base64",
+        dataSlice: { offset: 0, length: 72 },
+        filters: [{ dataSize: 165 }, { memcmp: { offset: 0, bytes: mint } }],
+        limit: HOLDER_PAGE_SIZE,
+        ...(paginationKey ? { paginationKey } : {}),
+      }],
+    }),
+    cache: "no-store",
+  });
+  const body = await response.json() as { error?: { message?: string }; result?: ProgramAccountPage };
+  if (!response.ok || body.error || !body.result) throw new Error(body.error?.message || `Holder RPC returned ${response.status}.`);
+  return body.result;
 }
 
 /** Queue a complete owner aggregation. This is deliberately separate from the
@@ -34,24 +64,28 @@ export async function enqueueHolderIndex(mint: string) {
 /** `getProgramAccounts` is one complete mint snapshot. It is only used from
  * the durable worker and the result is aggregated before persistence. */
 export async function indexAllHolders(mint: string, tokenProgram: string): Promise<HolderIndexResult> {
-  const program = new PublicKey(tokenProgram);
-  const mintKey = new PublicKey(mint);
-  const accounts = await rpcRetry(() => connection().getProgramAccounts(program, {
-    commitment: "confirmed",
-    dataSlice: { offset: 0, length: 72 },
-    filters: [{ memcmp: { offset: 0, bytes: mintKey.toBase58() } }],
-  }));
+  if (!hasDedicatedRpc() || !rpcUrl().includes("helius")) throw new Error("Complete holder indexing requires a Helius RPC URL or API key.");
   const byOwner = new Map<string, IndexedHolder>();
-  for (const account of accounts) {
-    const data = account.account.data;
-    if (data.length < 72) continue;
-    const owner = new PublicKey(data.subarray(32, 64)).toBase58();
-    const amount = data.readBigUInt64LE(64);
-    if (amount === 0n) continue;
-    const previous = byOwner.get(owner);
-    byOwner.set(owner, { owner, tokenAccount: previous?.tokenAccount || account.pubkey.toBase58(), amount: (previous?.amount || 0n) + amount });
-  }
-  return { holders: [...byOwner.values()].sort((a, b) => a.amount === b.amount ? 0 : a.amount > b.amount ? -1 : 1), tokenAccountCount: accounts.length };
+  let paginationKey: string | null = null;
+  let tokenAccountCount = 0;
+  const seenCursors = new Set<string>();
+  do {
+    const page = await rpcRetry(() => getProgramAccountsPage(tokenProgram, mint, paginationKey));
+    tokenAccountCount += page.accounts.length;
+    for (const account of page.accounts) {
+      const data = Buffer.from(account.account.data[0], "base64");
+      if (data.length < 72) continue;
+      const owner = new PublicKey(data.subarray(32, 64)).toBase58();
+      const amount = data.readBigUInt64LE(64);
+      if (amount === 0n) continue;
+      const previous = byOwner.get(owner);
+      byOwner.set(owner, { owner, tokenAccount: previous?.tokenAccount || account.pubkey, amount: (previous?.amount || 0n) + amount });
+    }
+    paginationKey = page.paginationKey;
+    if (paginationKey && seenCursors.has(paginationKey)) throw new Error("Holder RPC returned a repeated pagination cursor.");
+    if (paginationKey) seenCursors.add(paginationKey);
+  } while (paginationKey);
+  return { holders: [...byOwner.values()].sort((a, b) => a.amount === b.amount ? 0 : a.amount > b.amount ? -1 : 1), tokenAccountCount };
 }
 
 /** Processes one full holder job. A failed provider response preserves the
