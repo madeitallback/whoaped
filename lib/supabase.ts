@@ -90,6 +90,22 @@ export async function loadVerifiedFomoLabels(wallets: string[]): Promise<Map<str
   return result;
 }
 
+/** Reads only confirmed labels that are currently holding this mint. This keeps
+ * the headline supply calculation complete after the label queue finishes
+ * without issuing one URL-length-limited lookup per holder. */
+export async function loadVerifiedFomoLabelsForMint(mint: string): Promise<Map<string, StoredFomoLabel>> {
+  const result = new Map<string, StoredFomoLabel>();
+  if (!configured()) return result;
+  const response = await request(`current_verified_fomo_labels?mint=eq.${encodeURIComponent(mint)}&select=wallet,source,handle,confidence,fomo_identity_id&limit=10000`);
+  const rows = await response.json() as Array<Record<string, unknown>>;
+  rows.forEach(row => {
+    const source = row.source === "fomotags" ? "fomotags" : row.source === "fomoscan" ? "fomoscan" : null;
+    if (!source) return;
+    result.set(String(row.wallet), { wallet: String(row.wallet), source, handle: typeof row.handle === "string" ? row.handle : null, confidence: row.confidence === null || row.confidence === undefined ? null : Number(row.confidence), identityId: typeof row.fomo_identity_id === "string" ? row.fomo_identity_id : null });
+  });
+  return result;
+}
+
 export async function upsertVerifiedFomoLabels(entries: Array<{ wallet: string; hit: FomoHit }>) {
   if (!configured() || !entries.length) return;
   const now = new Date().toISOString();

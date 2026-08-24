@@ -3,7 +3,7 @@ import { PublicKey } from "@solana/web3.js";
 import { cached, store } from "@/lib/cache";
 import { resolveFomo, type FomoHit } from "@/lib/fomo";
 import { findCurveBuyers } from "@/lib/buyers";
-import { loadCurrentHolders, loadStoredBuyers, loadVerifiedFomoLabels, persistScan } from "@/lib/supabase";
+import { loadCurrentHolders, loadStoredBuyers, loadVerifiedFomoLabels, loadVerifiedFomoLabelsForMint, persistScan } from "@/lib/supabase";
 import { advanceDuneJobs, duneIndexState, enqueueDuneBuyerIndex } from "@/lib/dune";
 import { advanceHeliusJobs, enqueueHeliusCurveIndex, heliusIndexProgress, heliusIndexState } from "@/lib/helius-index";
 import { advanceHolderJobs, enqueueHolderIndex, holderIndexProgress } from "@/lib/holder-index";
@@ -124,7 +124,7 @@ async function scan(mint: PublicKey): Promise<ScanResponse> {
   const owners = [...ownerMap.values()].sort((a, b) => a.amount === b.amount ? 0 : a.amount > b.amount ? -1 : 1);
   const labelable = owners.filter(x => x.owner !== bondingCurve.toBase58() && x.owner !== creator && !BURN_ADDRESSES.has(x.owner)).map(x => x.owner);
   const fomoLookup = labelable.slice(0, usingFullHolderIndex ? 500 : labelable.length);
-  const storedFomo = await loadVerifiedFomoLabels(fomoLookup).catch(() => new Map());
+  const storedFomo = await (usingFullHolderIndex ? loadVerifiedFomoLabelsForMint(mint.toBase58()) : loadVerifiedFomoLabels(fomoLookup)).catch(() => new Map());
   const freshFomo = await resolveFomo(fomoLookup.filter(wallet => !storedFomo.has(wallet)).slice(0, 100));
   const fomo = new Map<string, FomoHit>([...storedFomo.entries()].map(([wallet, hit]) => [wallet, hit] as const));
   freshFomo.forEach((hit, wallet) => fomo.set(wallet, hit));
