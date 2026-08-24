@@ -35,6 +35,8 @@ export type StoredBuyer = {
   fomoHandle: string | null;
 };
 
+export type StoredHolder = { owner: string; tokenAccount: string; amount: bigint };
+
 type ScanJob = { id: number; job_type: string; status: string; provider_execution_id: string | null; payload: Record<string, unknown> | null };
 
 export async function loadStoredBuyers(mint: string): Promise<StoredBuyer[]> {
@@ -52,6 +54,25 @@ export async function loadStoredBuyers(mint: string): Promise<StoredBuyer[]> {
     pctOfSupply: Number(row.pct_of_supply || 0),
     fomoHandle: typeof row.fomo_handle === "string" ? row.fomo_handle : null,
   }));
+}
+
+export async function loadCurrentHolders(mint: string): Promise<StoredHolder[]> {
+  if (!configured()) return [];
+  const response = await request(`current_holder_balances?mint=eq.${encodeURIComponent(mint)}&select=owner,token_account,amount_raw&order=amount_raw.desc&limit=20000`);
+  const rows = await response.json() as Array<Record<string, unknown>>;
+  return rows.map(row => ({ owner: String(row.owner), tokenAccount: String(row.token_account), amount: BigInt(String(row.amount_raw)) }));
+}
+
+export async function replaceCurrentHolders(mint: string, holders: Array<{ owner: string; tokenAccount: string; amount: bigint }>, observedAt: string) {
+  if (!configured()) return;
+  await request(`current_holder_balances?mint=eq.${encodeURIComponent(mint)}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+  for (let index = 0; index < holders.length; index += 500) {
+    await request("current_holder_balances", {
+      method: "POST",
+      headers: { Prefer: "return=minimal" },
+      body: JSON.stringify(holders.slice(index, index + 500).map(holder => ({ mint, owner: holder.owner, token_account: holder.tokenAccount, amount_raw: holder.amount.toString(), observed_at: observedAt }))),
+    });
+  }
 }
 
 export async function listDuneJobs(mint: string, statuses?: string[]): Promise<ScanJob[]> {
