@@ -3,6 +3,8 @@ import { createDuneJob, listDuneJobs, updateScanJob, upsertDuneBuyers } from "@/
 type DuneExecution = { execution_id?: string; state?: string };
 type DuneStatus = { state?: string; is_execution_finished?: boolean; error?: unknown };
 type DuneResult = { result?: { rows?: Array<Record<string, unknown>> } };
+const RESULTS_PAGE_SIZE = 1_000;
+const MAX_RESULT_ROWS = 50_000;
 
 const api = "https://api.dune.com/api/v1";
 
@@ -30,6 +32,21 @@ async function startQuery(queryId: string, parameters: Record<string, string>) {
     body: JSON.stringify({ query_parameters: parameters }),
   });
   return await response.json() as DuneExecution;
+}
+
+/** Dune's results endpoint is paginated. Import every page up to a deliberate
+ * safety ceiling rather than silently treating the first 1,000 rows as a full
+ * buyer history. The ceiling is surfaced as a failed job, not fake completion. */
+async function fetchAllResults(executionId: string) {
+  const rows: Array<Record<string, unknown>> = [];
+  for (let offset = 0; offset < MAX_RESULT_ROWS; offset += RESULTS_PAGE_SIZE) {
+    const response = await dune(`/execution/${executionId}/results?limit=${RESULTS_PAGE_SIZE}&offset=${offset}`);
+    const page = await response.json() as DuneResult;
+    const batch = page.result?.rows || [];
+    rows.push(...batch);
+    if (batch.length < RESULTS_PAGE_SIZE) return rows;
+  }
+  throw new Error(`Dune result exceeded the ${MAX_RESULT_ROWS.toLocaleString()}-row safety limit.`);
 }
 
 /** Starts one saved Dune buyer query per mint; an existing job is never duplicated. */
@@ -70,9 +87,7 @@ export async function advanceDuneJobs(mint: string) {
         changed = true;
         continue;
       }
-      const resultResponse = await dune(`/execution/${job.provider_execution_id}/results`);
-      const result = await resultResponse.json() as DuneResult;
-      const rows = result.result?.rows || [];
+      const rows = await fetchAllResults(job.provider_execution_id);
       if (job.job_type === "historical_buyers") await upsertDuneBuyers(mint, rows);
       await updateScanJob(job.id, { status: "completed", result: { rows: rows.length } });
       changed = true;
