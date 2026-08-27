@@ -30,7 +30,7 @@ async function run(request: Request) {
       const persisted = await persistFomoFirstPartyLeaderboard(snapshot.window, snapshot.sourceUrl, snapshot.rows);
       counts[snapshot.window] = persisted ? persisted.affected : 0;
     }
-    await completeFomoCollector(claim.claimToken, sealFomoStorageState(result.storageState), counts);
+    await completeFomoCollector(claim.claimToken, result.storageState ? sealFomoStorageState(result.storageState) : claim.sealedSession, counts);
     return Response.json({ ok: true, counts, refreshedAt: new Date().toISOString() });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Fomo collector failed.";

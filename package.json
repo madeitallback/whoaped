@@ -8,7 +8,8 @@
     "start": "next start",
     "test": "vitest run",
     "test:watch": "vitest",
-    "fomo:connect": "node --env-file=.env.local scripts/bootstrap-fomo-collector.mjs"
+    "fomo:connect": "node --env-file=.env.local scripts/bootstrap-fomo-collector.mjs",
+    "fomo:browserbase:connect": "node --env-file=.env.local scripts/setup-fomo-browserbase.mjs"
   },
   "dependencies": {
     "@solana/spl-token": "^0.4.14",
