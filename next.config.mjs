@@ -1,5 +1,11 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  outputFileTracingIncludes: {
+    "/api/leaderboard/fomo/refresh": [
+      "./node_modules/playwright-core/**/*",
+      "./node_modules/@sparticuz/chromium/**/*",
+    ],
+  },
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "prod-fomo-profile-pics.s3.amazonaws.com", pathname: "/**" },

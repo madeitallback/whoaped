@@ -1,4 +1,3 @@
-import { collectFomoLeaderboards } from "@/lib/platforms/fomo/cloud-collector";
 import { openFomoStorageState, sealFomoStorageState } from "@/lib/platforms/fomo/session-crypto";
 import {
   claimFomoCollector,
@@ -24,6 +23,7 @@ async function run(request: Request) {
   const claim = await claimFomoCollector();
   if (!claim) return Response.json({ ok: true, skipped: true, reason: "setup_required_or_already_running" });
   try {
+    const { collectFomoLeaderboards } = await import("@/lib/platforms/fomo/cloud-collector");
     const result = await collectFomoLeaderboards(openFomoStorageState(claim.sealedSession));
     const counts: Record<string, number> = {};
     for (const snapshot of result.snapshots) {
