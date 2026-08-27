@@ -1,20 +1,14 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { AnalysisProfile, WatchlistEntry } from "@/lib/types";
+import { isSupabaseConfigured, supabaseRequest } from "./data/supabase";
 
 type Store = { profiles: Record<string, AnalysisProfile>; watchlist: WatchlistEntry[] };
 const empty: Store = { profiles: {}, watchlist: [] };
 const storePath = process.env.WHOAPED_DATA_FILE || process.env.WHOHELD_DATA_FILE || process.env.FOLLOWER_ALPHA_DATA_FILE || path.join(process.cwd(), ".data", "whoaped.json");
-const supabaseUrl = process.env.SUPABASE_URL?.replace(/\/$/, "");
-const serviceRole = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-function hasSupabase() { return Boolean(supabaseUrl && serviceRole); }
-function headers(extra: Record<string, string> = {}) { return { apikey: serviceRole!, Authorization: `Bearer ${serviceRole!}`, "Content-Type": "application/json", ...extra }; }
-async function supabase(pathname: string, init: RequestInit = {}) {
-  const response = await fetch(`${supabaseUrl}/rest/v1/${pathname}`, { ...init, headers: { ...headers(), ...(init.headers ?? {}) }, cache: "no-store" });
-  if (!response.ok) throw new Error(`Supabase request failed (${response.status}).`);
-  return response;
-}
+function hasSupabase() { return isSupabaseConfigured(); }
+function headers(extra: Record<string, string> = {}) { return { "Content-Type": "application/json", ...extra }; }
+const supabase = supabaseRequest;
 async function readStore(): Promise<Store> { try { return JSON.parse(await readFile(storePath, "utf8")) as Store; } catch { return structuredClone(empty); } }
 async function save(store: Store) { await mkdir(path.dirname(storePath), { recursive: true }); await writeFile(storePath, JSON.stringify(store, null, 2)); }
 

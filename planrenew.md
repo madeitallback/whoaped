@@ -1842,3 +1842,5 @@ Security/data boundary: no new public Supabase table or grant was introduced. Ex
 
 Tests run and results: 55/55 Vitest tests pass, including directory parsing, null preservation, deterministic IDs, and score conversion. The 24-route Next production build passes.
 Exact next phase: deploy, allow the first stale-while-revalidate batch to complete, verify persisted Pump rows on a second board request, and inspect Vercel runtime errors.
+
+Production issue found during the first live batch: the legacy `lib/store.ts` checked only direct Supabase service-role variables, while this Vercel project intentionally uses the existing `whoaped-data` gateway. It therefore fell back to the immutable `/var/task/.data` path. The store now delegates to the canonical direct-or-gateway Supabase transport used by the rest of the application; no new credential or database path was introduced. Full tests and build pass after the correction.
