@@ -96,7 +96,7 @@ export function pumpProfilesToBoard(profiles: AnalysisProfile[]): SocialBoardRow
     weightedReturn: profile.metrics.capitalWeightedReturn,
     medianHoldSeconds: profile.metrics.medianHoldSeconds,
     lastActivityAt: profile.metrics.lastActivityAt,
-    sampleLabel: profile.id.startsWith("pump-daily:") ? `${profile.metrics.closedLots} closed positions / 90d batch` : `${profile.metrics.closedLots} verified closed lot${profile.metrics.closedLots === 1 ? "" : "s"}`,
+    sampleLabel: profile.dataset === "pump_daily_v1" ? `${profile.metrics.closedLots} closed positions / 90d batch` : `${profile.metrics.closedLots} verified closed lot${profile.metrics.closedLots === 1 ? "" : "s"}`,
   }));
 }
 

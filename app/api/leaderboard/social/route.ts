@@ -12,7 +12,7 @@ export async function GET() {
     fetchFomoLeaderboard().catch(() => ({ rows: [], capturedAt: null, configured: Boolean(process.env.FOMOSCAN_API_KEY) })),
   ]);
   const pump = pumpProfilesToBoard(profiles);
-  const pumpDailyFresh = profiles.some((profile) => profile.id.startsWith("pump-daily:") && profile.updatedAt >= Date.now() - PUMP_REFRESH_TTL_MS);
+  const pumpDailyFresh = profiles.some((profile) => profile.dataset === "pump_daily_v1" && profile.updatedAt >= Date.now() - PUMP_REFRESH_TTL_MS);
   if (!pumpDailyFresh) after(() => refreshPumpLeaderboard(false).catch((error) => console.error("[social-leaderboard] background Pump refresh failed", { error: error instanceof Error ? error.message : String(error) })));
   return Response.json({
     rows: [...fomo.rows, ...pump],

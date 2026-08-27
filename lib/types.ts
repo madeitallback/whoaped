@@ -46,6 +46,7 @@ export interface WalletMetrics {
 
 export interface AnalysisProfile {
   id: string;
+  dataset?: "pump_daily_v1";
   source: Source;
   label: string;
   handle?: string;

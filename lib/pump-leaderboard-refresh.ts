@@ -2,11 +2,17 @@ import { fetchDuneWalletSummaries, type DuneWalletSummary } from "./dune";
 import { fetchPumpDirectory, type PumpDirectoryProfile } from "./pump-directory";
 import { listProfiles, saveProfiles } from "./store";
 import type { AnalysisProfile, WalletMetrics } from "./types";
+import { createHash } from "node:crypto";
 
 export const PUMP_DAILY_BATCH_SIZE = 20;
 export const PUMP_REFRESH_TTL_MS = 20 * 60 * 60 * 1000;
 let refreshInFlight: Promise<PumpRefreshResult> | null = null;
 export type PumpRefreshResult = { refreshed: boolean; profiles: number; wallets: number; reason: "completed" | "fresh" | "in_flight" };
+
+export function stablePumpProfileId(wallet: string) {
+  const hex = createHash("sha256").update(`whoaped:pump-daily:${wallet}`).digest("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
 
 const numeric = (value: number | string | null) => { if (value === null || value === "") return null; const parsed = Number(value); return Number.isFinite(parsed) ? parsed : null; };
 const clamp = (value: number) => Math.max(0, Math.min(1, value));
@@ -22,11 +28,11 @@ export function metricsFromDuneSummary(summary: DuneWalletSummary): WalletMetric
 
 export function pumpSummaryProfile(directory: PumpDirectoryProfile, summary: DuneWalletSummary, updatedAt: number): AnalysisProfile {
   const metrics = metricsFromDuneSummary(summary);
-  return { id: `pump-daily:${directory.wallet}`, source: "pump", label: directory.label, handle: directory.handle, wallets: [{ address: directory.wallet, chain: "solana", verified: true }], metrics, trades: [], updatedAt, status: metrics.score === null ? "partial" : "ready", notices: [`Daily Pump directory rank #${directory.rank}.`, "Wallet metrics use one cost-bounded Dune batch over the last 90 days.", "Median hold remains unavailable in the batch summary and is never inferred."] };
+  return { id: stablePumpProfileId(directory.wallet), dataset: "pump_daily_v1", source: "pump", label: directory.label, handle: directory.handle, wallets: [{ address: directory.wallet, chain: "solana", verified: true }], metrics, trades: [], updatedAt, status: metrics.score === null ? "partial" : "ready", notices: [`Daily Pump directory rank #${directory.rank}.`, "Wallet metrics use one cost-bounded Dune batch over the last 90 days.", "Median hold remains unavailable in the batch summary and is never inferred."] };
 }
 
 export async function hasFreshPumpDailyProfiles(now = Date.now()) {
-  return (await listProfiles(100)).some((profile) => profile.id.startsWith("pump-daily:") && profile.updatedAt >= now - PUMP_REFRESH_TTL_MS);
+  return (await listProfiles(100)).some((profile) => profile.dataset === "pump_daily_v1" && profile.updatedAt >= now - PUMP_REFRESH_TTL_MS);
 }
 
 async function executeRefresh(force: boolean): Promise<PumpRefreshResult> {

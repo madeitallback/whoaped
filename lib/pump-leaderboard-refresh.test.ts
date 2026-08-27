@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { metricsFromDuneSummary, pumpSummaryProfile } from "./pump-leaderboard-refresh";
+import { metricsFromDuneSummary, pumpSummaryProfile, stablePumpProfileId } from "./pump-leaderboard-refresh";
 import { parsePumpDirectory } from "./pump-directory";
 
 const wallet = "5WnAczezsDku4YkJEKW9PUzLm87Wuq6VKczLn8n2YHP2";
@@ -17,7 +17,8 @@ describe("daily Pump leaderboard refresh", () => {
 
   it("creates a stable daily profile without fabricated trades", () => {
     const profile = pumpSummaryProfile({ rank: 1, wallet, label: "oxr", handle: "oxr", profileUrl: "https://pump.fun/profile/oxr" }, { address: wallet, swaps_30d: 0, last_activity: null, closed_positions: 0, win_rate: null, capital_weighted_return: null, realized_pnl_usd: null }, 123);
-    expect(profile).toMatchObject({ id: `pump-daily:${wallet}`, source: "pump", status: "partial", updatedAt: 123, trades: [] });
+    expect(profile).toMatchObject({ id: stablePumpProfileId(wallet), dataset: "pump_daily_v1", source: "pump", status: "partial", updatedAt: 123, trades: [] });
+    expect(profile.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-a[0-9a-f]{3}-[0-9a-f]{12}$/);
     expect(profile.metrics.realizedPnlUsd).toBeNull();
   });
 });
