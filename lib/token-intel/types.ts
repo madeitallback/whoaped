@@ -62,5 +62,6 @@ export type TokenScan = {
 export type FomoIdentity = {
   handle: string | null;
   identityId: string | null;
-  source: "fomoscan" | "fomotags";
+  avatarUrl?: string | null;
+  source: "fomoscan" | "fomotags" | "first_party";
 };

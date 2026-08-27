@@ -5,14 +5,14 @@ import { fetchFomoProfile, parseVisibleFomoFollowers, resolveVisibleFomoFollower
 
 export async function getFomoFollowerEdge(handle: string) {
   const profile = await fetchFomoProfile(handle);
-  if (!profile) throw new Error("This Fomo profile is not known to FomoScan.");
+  if (!profile) throw new Error("This Fomo profile has not been captured yet.");
   const cached = await readFollowerEdgeSnapshot("fomo", profile.platformProfileId);
   return cached ?? collectionRequiredFollowerEdge(profile.handle || handle);
 }
 
 export async function calculateFomoFollowerEdge(input: { handle: string; followers: unknown; visibleFollowerCount?: unknown }) {
   const owner = await fetchFomoProfile(input.handle);
-  if (!owner) throw new Error("This Fomo profile is not known to FomoScan.");
+  if (!owner) throw new Error("This Fomo profile has not been captured yet.");
   const handles = parseVisibleFomoFollowers(input.followers);
   if (!handles.length) throw new Error("No visible Fomo follower profile links were found. Open the Followers list first, then retry.");
   const visibleFollowerCount = typeof input.visibleFollowerCount === "number" && Number.isFinite(input.visibleFollowerCount) && input.visibleFollowerCount >= handles.length

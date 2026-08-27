@@ -3,6 +3,7 @@ export type TrendingToken = {
   mint: string;
   name: string;
   symbol: string;
+  imageUrl: string | null;
   priceUsd: number | null;
   priceChange24hPct: number | null;
   volume24hUsd: number | null;
@@ -37,6 +38,7 @@ export function parseBirdeyeTrending(payload: unknown): TrendingToken[] {
       mint,
       name: typeof row.name === "string" && row.name.trim() ? row.name.trim() : "Solana token",
       symbol: typeof row.symbol === "string" && row.symbol.trim() ? row.symbol.trim() : mint.slice(0, 5).toUpperCase(),
+      imageUrl: typeof row.logoURI === "string" ? row.logoURI : typeof row.logoUri === "string" ? row.logoUri : typeof row.image === "string" ? row.image : null,
       priceUsd: finiteNumber(row.price, row.priceUsd, row.price_usd),
       priceChange24hPct: finiteNumber(row.price24hChangePercent, row.priceChange24hPercent, row.price_change_24h_percent),
       volume24hUsd: finiteNumber(row.volume24hUSD, row.volume24hUsd, row.volume_24h_usd),

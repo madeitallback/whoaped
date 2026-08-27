@@ -6,6 +6,9 @@ const ALLOWED_RESOURCES = new Set([
   "token_buy_events", "token_trade_events", "token_social_actors", "thesis_evidence",
   "signal_snapshots",
   "fomo_token_holder_observations",
+  "fomo_leaderboard_observations",
+  "fomo_identity_evidence",
+  "wallet_links",
 ]);
 const ALLOWED_RPCS = new Set([
   "claim_ingestion_jobs", "replace_token_positions", "upsert_fomo_identity_batch",
@@ -13,6 +16,7 @@ const ALLOWED_RPCS = new Set([
   "reconcile_token_trade_activity",
   "capture_fomo_follower_snapshot",
   "capture_fomo_token_holder_batch",
+  "capture_fomo_first_party_leaderboard",
 ]);
 
 async function sha256(value: string) {

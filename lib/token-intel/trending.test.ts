@@ -8,7 +8,7 @@ describe("Birdeye trending parser", () => {
       { address: mint, name: "Wrapped SOL", symbol: "SOL", price: 123, price24hChangePercent: -2.5, volume24hUSD: 50_000, liquidity: 1_000_000 },
       { address: mint, name: "duplicate" },
       { address: "bad", name: "invalid" },
-    ] } })).toEqual([{ rank: 1, mint, name: "Wrapped SOL", symbol: "SOL", priceUsd: 123, priceChange24hPct: -2.5, volume24hUsd: 50_000, liquidityUsd: 1_000_000 }]);
+    ] } })).toEqual([{ rank: 1, mint, name: "Wrapped SOL", symbol: "SOL", imageUrl: null, priceUsd: 123, priceChange24hPct: -2.5, volume24hUsd: 50_000, liquidityUsd: 1_000_000 }]);
   });
 
   it("fails loudly on an unsupported payload", () => {

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://whoaped-phi.vercel.app"),
+  metadataBase: new URL("https://www.whoaped.xyz"),
   title: "WHOAPED — Social intelligence for Solana",
   description: "See who aped, who held, what they said, and whether their followers win across Pump and Fomo.",
   alternates: { canonical: "/" },

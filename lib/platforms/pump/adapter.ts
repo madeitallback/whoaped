@@ -23,7 +23,22 @@ type PumpProfilePayload = {
   username?: unknown;
   displayName?: unknown;
   followers?: unknown;
+  profileImage?: unknown;
+  profileImageUrl?: unknown;
+  profile_image?: unknown;
+  avatarUrl?: unknown;
 };
+
+function safeImageUrl(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value !== "string") continue;
+    try {
+      const parsed = new URL(value.trim());
+      if (parsed.protocol === "https:") return parsed.toString();
+    } catch {}
+  }
+  return null;
+}
 
 export function parsePumpProfile(payload: unknown, expectedWallet: string): PlatformProfileRecord {
   if (!payload || typeof payload !== "object") throw new PumpFormatError("Pump returned an unsupported profile payload.");
@@ -44,6 +59,7 @@ export function parsePumpProfile(payload: unknown, expectedWallet: string): Plat
     profileUrl: `https://pump.fun/profile/${encodeURIComponent(handle || address)}`,
     primaryWallet: address,
     visibleFollowerCount,
+    avatarUrl: safeImageUrl(raw.profileImageUrl, raw.profileImage, raw.profile_image, raw.avatarUrl),
   };
 }
 

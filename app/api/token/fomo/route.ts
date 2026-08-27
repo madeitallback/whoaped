@@ -1,5 +1,4 @@
-import { persistFomoIdentities } from "@/lib/data/repository";
-import { resolveFomoWallets } from "@/lib/token-intel/fomoscan";
+import { readStoredFomoIdentitiesByWallet } from "@/lib/data/repository";
 import { isSolanaAddress } from "@/lib/providers";
 
 export const runtime = "nodejs";
@@ -10,16 +9,8 @@ export async function POST(request: Request) {
     const body = await request.json() as { mint?: string; wallets?: string[]; holderWallets?: string[]; buyerWallets?: string[] };
     const wallets = [...new Set(body.wallets || [])].filter(isSolanaAddress).slice(0, 100);
     if (!wallets.length) return Response.json({ identities: {}, checked: 0, failed: 0 });
-    const result = await resolveFomoWallets(wallets);
-    let persisted = false;
-    if (body.mint && isSolanaAddress(body.mint)) {
-      try {
-        persisted = await persistFomoIdentities(body.mint, result.identities, new Set((body.holderWallets || []).filter(isSolanaAddress)), new Set((body.buyerWallets || []).filter(isSolanaAddress)));
-      } catch (persistenceError) {
-        console.error("[token/fomo] persistence unavailable", { error: persistenceError instanceof Error ? persistenceError.message : String(persistenceError) });
-      }
-    }
-    return Response.json({ identities: Object.fromEntries(result.identities), checked: result.checked, failed: result.failed, persisted });
+    const identities = await readStoredFomoIdentitiesByWallet(wallets);
+    return Response.json({ identities: Object.fromEntries(identities), checked: wallets.length, failed: 0, persisted: true, source: "first_party" });
   } catch (error) {
     console.error("[token/fomo] failed", { error: error instanceof Error ? error.message : String(error) });
     return Response.json({ error: "Fomo identity enrichment is temporarily unavailable." }, { status: 502 });

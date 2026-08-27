@@ -13,7 +13,7 @@ On-chain wallet and social-trading intelligence. The current wallet analysis use
 ## Test directly on Pump/Fomo
 
 1. Open `chrome://extensions`, enable **Developer mode**, then choose **Load unpacked** and select the `extension` folder.
-2. The extension defaults to `https://whoaped-phi.vercel.app`; override the App URL with `http://localhost:3002` only for local development.
+2. The extension defaults to `https://www.whoaped.xyz`; override the App URL with `http://localhost:3002` only for local development.
 3. On `pump.fun/profile/<wallet>`, the extension reads the public wallet already present in the profile URL and renders a live **WHOAPED** card directly in the profile. No redirect is needed.
 4. On `fomo.family/profile/<handle>`, the extension renders the same inline card only when the profile itself exposes a public Solana explorer link. A handle alone is not a verifiable wallet mapping.
 5. On a visible Pump/Fomo leaderboard, click **Queue visible profiles** to send a pilot shortlist to the dashboard. Pump wallets can be batch ranked; Fomo profiles appear in a queue until a public mapping is available.
@@ -22,17 +22,21 @@ On-chain wallet and social-trading intelligence. The current wallet analysis use
 
 - Keys are server-only. Do not add them to the client or commit `.env.local`.
 - Pump/Fomo follower relationships are not part of the current production metric yet. The Pump-first Follower Edge implementation is specified in `planrenew.md`.
-- The Fomo flow accepts a handle for labeling and a wallet that the user independently verified.
-- The Pump/Fomo page integration is enabled only for this authorized pilot; it reads visible profile links and never uses hidden endpoints.
+- The Fomo collector accepts only data visible in an authorized `fomo.family` page. It never reads cookies, storage, credentials, or hidden DOM.
+- A Fomo handle is linked to a wallet only through a unique balance fingerprint or repeated mint/side/time transaction evidence. Ambiguous matches stay unresolved.
+- FomoScan is an opt-in compatibility fallback (`FOMOSCAN_FALLBACK_ENABLED=true`), not the canonical production source.
 
 ## Partner-ready paths
 
 - `POST /api/analyze` runs a manual wallet analysis.
 - `GET /api/profiles/:id` reads a saved analysis.
 - `GET /api/widget/:id` provides a compact native-integration payload.
+- `GET /api/platforms/fomo/observations?window=24h&limit=100` serves WHOAPED's latest first-party Fomo leaderboard observations.
+- `POST /api/platforms/fomo/observations` ingests an authorized visible leaderboard capture; `POST /api/platforms/fomo/token-holders` ingests visible token holders, theses, and transaction evidence.
+- `GET /api/leaderboard/social` serves the unified Pump + Fomo leaderboard used by the product.
 - `POST /api/webhooks/helius` verifies `Authorization: WEBHOOK_SECRET`; attach it only to user-watchlisted wallets.
 
-The current Wallet Performance Beta is an individual-wallet estimate: 60% normalized realized win rate and 40% normalized capital-weighted return. It is not Follower Edge. EVM analysis and WHOAPED follower analytics remain gated on an authorized social-graph source.
+The optional WR + Weighted Return sort combines 60% normalized realized win rate and 40% normalized capital-weighted return. Both source metrics stay visible; it is not a confidence index and it is not Follower Edge.
 
 ## Production storage and workers
 

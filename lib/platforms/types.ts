@@ -8,6 +8,7 @@ export interface PlatformProfileRecord {
   profileUrl: string;
   primaryWallet: string | null;
   visibleFollowerCount: number | null;
+  avatarUrl?: string | null;
 }
 
 export interface PlatformFollowerRecord {

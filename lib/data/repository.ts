@@ -1,7 +1,7 @@
 import type { TokenScan } from "../token-intel/types";
 import type { VerifiedTradeEvent } from "../token-intel/buyers";
 import type { FomoIdentity } from "../token-intel/types";
-import type { TokenSocialActor, TokenThesisEvidence, TokenTradeActivityEvent, TokenWalletActivity } from "./contracts";
+import type { FomoLeaderboardObservation, TokenSocialActor, TokenThesisEvidence, TokenTradeActivityEvent, TokenWalletActivity } from "./contracts";
 import type { ThesisCaptureInput } from "../thesis-evidence";
 import type { PlatformFollowerRecord, PlatformProfileRecord } from "../platforms/types";
 import type { FollowerEdgeMetrics } from "../follower-edge";
@@ -173,6 +173,8 @@ export async function persistFomoHolderCaptures(mint: string, sourceUrl: string,
         handle: capture.handle,
         normalized_handle: capture.normalizedHandle,
         amount_text: capture.amountText,
+        avatar_url: capture.avatarUrl ?? null,
+        thesis_text: capture.thesisText ?? null,
         amount_low_ui: capture.amountLowUi,
         amount_high_ui: capture.amountHighUi,
         hold_time_text: capture.holdTimeText ?? null,
@@ -182,10 +184,126 @@ export async function persistFomoHolderCaptures(mint: string, sourceUrl: string,
         wallet: capture.wallet,
         confidence: capture.confidence,
         resolution_method: capture.resolutionMethod,
+        trade_events: capture.trades ?? [],
+        resolution_evidence: capture.resolutionEvidence,
       })),
     }),
   });
   return Number(await response.json());
+}
+
+export type FomoLeaderboardCaptureItem = Omit<FomoLeaderboardObservation, "window" | "sourceUrl" | "capturedAt">;
+
+export async function persistFomoFirstPartyLeaderboard(window: FomoLeaderboardObservation["window"], sourceUrl: string, rows: FomoLeaderboardCaptureItem[]) {
+  if (!isSupabaseConfigured() || !rows.length) return 0;
+  const capturedAt = new Date().toISOString();
+  const response = await supabaseRequest("rpc/capture_fomo_first_party_leaderboard", {
+    method: "POST",
+    body: JSON.stringify({
+      capture_window: window,
+      capture_source_url: sourceUrl,
+      capture_observed_at: capturedAt,
+      capture_items: rows.map((row) => ({
+        normalized_handle: row.normalizedHandle,
+        handle: row.handle,
+        display_name: row.displayName,
+        avatar_url: row.avatarUrl,
+        platform_rank: row.platformRank,
+        realized_pnl_usd: row.realizedPnlUsd,
+        volume_usd: row.volumeUsd,
+        trade_count: row.tradeCount,
+        follower_count: row.followerCount,
+      })),
+    }),
+  });
+  return { affected: Number(await response.json()), capturedAt };
+}
+
+type FomoLeaderboardRow = {
+  period: FomoLeaderboardObservation["window"];
+  normalized_handle: string;
+  handle: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  platform_rank: number;
+  realized_pnl_usd: number | string | null;
+  volume_usd: number | string | null;
+  trade_count: number | null;
+  follower_count: number | null;
+  source_url: string;
+  captured_at: string;
+};
+
+export async function readFomoFirstPartyLeaderboard(window: FomoLeaderboardObservation["window"] = "24h"): Promise<FomoLeaderboardObservation[]> {
+  if (!isSupabaseConfigured()) return [];
+  const latestResponse = await supabaseRequest(`fomo_leaderboard_observations?period=eq.${window}&select=captured_at&order=captured_at.desc&limit=1`);
+  const latest = await latestResponse.json() as Array<{ captured_at: string }>;
+  if (!latest[0]?.captured_at) return [];
+  const response = await supabaseRequest(`fomo_leaderboard_observations?period=eq.${window}&captured_at=eq.${encodeURIComponent(latest[0].captured_at)}&select=*&order=platform_rank.asc&limit=500`);
+  const rows = await response.json() as FomoLeaderboardRow[];
+  return rows.map((row) => ({
+    window: row.period,
+    normalizedHandle: row.normalized_handle,
+    handle: row.handle,
+    displayName: row.display_name,
+    avatarUrl: row.avatar_url,
+    platformRank: row.platform_rank,
+    realizedPnlUsd: row.realized_pnl_usd === null ? null : Number(row.realized_pnl_usd),
+    volumeUsd: row.volume_usd === null ? null : Number(row.volume_usd),
+    tradeCount: row.trade_count,
+    followerCount: row.follower_count,
+    sourceUrl: row.source_url,
+    capturedAt: row.captured_at,
+  }));
+}
+
+type StoredFomoProfileRow = {
+  id: string;
+  platform_profile_id: string;
+  handle: string | null;
+  display_name: string | null;
+  profile_url: string;
+  metadata: Record<string, unknown> | null;
+};
+
+export async function readStoredFomoProfile(handle: string): Promise<(PlatformProfileRecord & { avatarUrl: string | null }) | null> {
+  if (!isSupabaseConfigured()) return null;
+  const normalized = handle.trim().replace(/^@/, "").toLowerCase();
+  const profileResponse = await supabaseRequest(`social_profiles?platform=eq.fomo&handle=ilike.${encodeURIComponent(normalized)}&select=id,platform_profile_id,handle,display_name,profile_url,metadata&order=observed_at.desc&limit=1`);
+  const profiles = await profileResponse.json() as StoredFomoProfileRow[];
+  const profile = profiles[0];
+  if (!profile) return null;
+  const walletResponse = await supabaseRequest(`wallet_links?profile_id=eq.${encodeURIComponent(profile.id)}&valid_to=is.null&select=wallet&order=valid_from.desc&limit=1`);
+  const wallets = await walletResponse.json() as Array<{ wallet: string }>;
+  const followerCount = typeof profile.metadata?.follower_count === "number" ? profile.metadata.follower_count : null;
+  return {
+    platform: "fomo",
+    platformProfileId: profile.platform_profile_id,
+    handle: profile.handle,
+    displayName: profile.display_name,
+    profileUrl: profile.profile_url,
+    primaryWallet: wallets[0]?.wallet ?? null,
+    visibleFollowerCount: followerCount,
+    avatarUrl: typeof profile.metadata?.avatar_url === "string" ? profile.metadata.avatar_url : null,
+  };
+}
+
+type FomoWalletLinkRow = {
+  wallet: string;
+  social_profiles: StoredFomoProfileRow | StoredFomoProfileRow[] | null;
+};
+
+export async function readStoredFomoIdentitiesByWallet(wallets: string[]) {
+  if (!isSupabaseConfigured() || !wallets.length) return new Map<string, FomoIdentity>();
+  const unique = [...new Set(wallets)].slice(0, 100);
+  const select = "wallet,social_profiles!inner(id,platform_profile_id,handle,display_name,profile_url,metadata)";
+  const response = await supabaseRequest(`wallet_links?wallet=in.(${unique.map(encodeURIComponent).join(",")})&valid_to=is.null&social_profiles.platform=eq.fomo&select=${encodeURIComponent(select)}`);
+  const rows = await response.json() as FomoWalletLinkRow[];
+  return new Map(rows.flatMap((row): Array<[string, FomoIdentity]> => {
+    const profile = Array.isArray(row.social_profiles) ? row.social_profiles[0] : row.social_profiles;
+    if (!profile) return [];
+    return [[row.wallet, { handle: profile.handle, identityId: profile.platform_profile_id, avatarUrl: typeof profile.metadata?.avatar_url === "string" ? profile.metadata.avatar_url : null, source: "first_party" }]];
+  }));
 }
 
 export async function persistFomoIdentities(mint: string, identities: Map<string, FomoIdentity>, holderWallets: Set<string>, buyerWallets: Set<string>) {
@@ -273,18 +391,20 @@ type TokenSocialActorRow = {
     handle: string | null;
     display_name: string | null;
     profile_url: string;
+    metadata: Record<string, unknown> | null;
   } | Array<{
     platform: TokenSocialActor["platform"];
     platform_profile_id: string;
     handle: string | null;
     display_name: string | null;
     profile_url: string;
+    metadata: Record<string, unknown> | null;
   }> | null;
 };
 
 export async function readTokenSocialActors(mint: string): Promise<TokenSocialActor[]> {
   if (!isSupabaseConfigured()) return [];
-  const select = "profile_id,wallet,relationship,confidence,observed_at,social_profiles!inner(platform,platform_profile_id,handle,display_name,profile_url)";
+  const select = "profile_id,wallet,relationship,confidence,observed_at,social_profiles!inner(platform,platform_profile_id,handle,display_name,profile_url,metadata)";
   const response = await supabaseRequest(`token_social_actors?mint=eq.${encodeURIComponent(mint)}&select=${encodeURIComponent(select)}&order=observed_at.desc`);
   const rows = await response.json() as TokenSocialActorRow[];
   const actors = new Map<string, TokenSocialActor>();
@@ -299,6 +419,7 @@ export async function readTokenSocialActors(mint: string): Promise<TokenSocialAc
       handle: profile.handle,
       displayName: profile.display_name,
       profileUrl: profile.profile_url,
+      avatarUrl: typeof profile.metadata?.avatar_url === "string" ? profile.metadata.avatar_url : null,
       wallet: row.wallet,
       relationship: row.relationship,
       confidence: row.confidence,

@@ -14,6 +14,21 @@ export type CanonicalSocialProfile = {
   observedAt: string;
 };
 
+export type FomoLeaderboardObservation = {
+  window: "24h" | "7d" | "30d" | "all";
+  normalizedHandle: string;
+  handle: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  platformRank: number;
+  realizedPnlUsd: number | null;
+  volumeUsd: number | null;
+  tradeCount: number | null;
+  followerCount: number | null;
+  sourceUrl: string;
+  capturedAt: string;
+};
+
 export type CanonicalWalletLink = {
   profileId: string;
   wallet: string;
@@ -44,6 +59,7 @@ export type TokenSocialActor = {
   handle: string | null;
   displayName: string | null;
   profileUrl: string;
+  avatarUrl?: string | null;
   wallet: string;
   relationship: "buyer" | "holder" | "both" | "observed";
   confidence: IdentityConfidence;

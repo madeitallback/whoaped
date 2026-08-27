@@ -1,4 +1,5 @@
 import { isSolanaAddress } from "../../providers";
+import { readStoredFomoProfile } from "../../data/repository";
 import type { PlatformFollowerRecord, PlatformProfileRecord } from "../types";
 
 const HANDLE = /^[A-Za-z0-9_.-]{1,64}$/;
@@ -51,6 +52,12 @@ async function fetchFomoScanUser(handle: string): Promise<FomoScanUser | null> {
 }
 
 export async function fetchFomoProfile(handle: string): Promise<PlatformProfileRecord | null> {
+  const stored = await readStoredFomoProfile(normalizeFomoHandle(handle)).catch(() => null);
+  if (stored) return stored;
+  if (process.env.FOMOSCAN_FALLBACK_ENABLED !== "true") {
+    const normalized = normalizeFomoHandle(handle);
+    return { platform: "fomo", platformProfileId: `handle:${normalized.toLowerCase()}`, handle: normalized, displayName: normalized, profileUrl: `https://fomo.family/profile/${encodeURIComponent(normalized)}`, primaryWallet: null, visibleFollowerCount: null, avatarUrl: null };
+  }
   const user = await fetchFomoScanUser(handle);
   if (!user) return null;
   return {
@@ -86,6 +93,15 @@ export async function resolveVisibleFomoFollowers(handles: string[], concurrency
       const handle = queue.shift();
       if (!handle) return;
       try {
+        const stored = await readStoredFomoProfile(handle).catch(() => null);
+        if (stored) {
+          followers.push({ platformFollowerId: stored.platformProfileId, handle: stored.handle, profileUrl: stored.profileUrl, verifiedWallet: stored.primaryWallet, resolutionStatus: stored.primaryWallet ? "verified" : "unresolved", followerCount: stored.visibleFollowerCount });
+          continue;
+        }
+        if (process.env.FOMOSCAN_FALLBACK_ENABLED !== "true") {
+          followers.push({ platformFollowerId: `handle:${handle.toLowerCase()}`, handle, profileUrl: `https://fomo.family/profile/${encodeURIComponent(handle)}`, verifiedWallet: null, resolutionStatus: "unresolved", followerCount: null });
+          continue;
+        }
         const user = await fetchFomoScanUser(handle);
         if (!user) {
           followers.push({ platformFollowerId: handle.toLowerCase(), handle, profileUrl: `https://fomo.family/profile/${encodeURIComponent(handle)}`, verifiedWallet: null, resolutionStatus: "unresolved", followerCount: null });

@@ -1921,11 +1921,11 @@ Authorization boundary: this research was performed in the contest account after
 
 ### Next implementation phase
 
-- [ ] Define the observation/evidence database migration and strict server contracts.
-- [ ] Reuse the existing user-triggered visible-DOM privacy boundary for leaderboard, token-holder, position, thesis, and follower captures; do not read browser credentials.
-- [ ] Implement and test the generic Solana handle resolver with rounding intervals, timestamp tolerances, repeated-event matching, and ambiguity rejection.
+- [x] Define the observation/evidence database migration and strict server contracts.
+- [x] Reuse the existing user-triggered visible-DOM privacy boundary for leaderboard, token-holder, position, thesis, and follower captures; do not read browser credentials.
+- [x] Implement and test the generic Solana handle resolver with rounding intervals, timestamp tolerances, repeated-event matching, and ambiguity rejection.
 - [ ] Backfill a small validation cohort across multiple tokens/profiles and measure precision before promoting any mapping.
-- [ ] Replace the FomoScan-only leaderboard/thesis failure path with first-party persisted observations and show freshness/coverage.
+- [x] Replace the FomoScan-only leaderboard/thesis failure path with first-party persisted observations and show freshness/coverage.
 - [ ] Run unit, fixture, migration, build, and end-to-end tests; deploy only after zero hardcoded-profile assumptions remain.
 
 Research status: feasibility proven for one real Solana profile with four independently matching transactions. Implementation is not yet complete, and the result must not be described as production-ready until the generic resolver, persistence, validation cohort, and deployment checks above pass.
@@ -1977,11 +1977,26 @@ Decision: the Windows 97 direction was explored and then intentionally rejected 
 
 ### Product/data backlog retained after the visual phase
 
-- [ ] Replace the FomoScan-quota dependency with persisted first-party Fomo leaderboard, holder, position, and thesis observations.
-- [ ] Complete the transaction-time Fomo identity resolver using event count/order/side/time, mint, signer, route marker, and balance evidence.
+- [x] Replace the FomoScan-quota dependency with persisted first-party Fomo leaderboard, holder, position, and thesis observations. FomoScan is an opt-in fallback only.
+- [x] Complete the transaction-time Fomo identity resolver using event count/order/side/time, mint, signer, route marker, and balance evidence, with unique-match and ambiguity rejection.
 - [ ] Build progressive, cost-bounded Pump profile enrichment for the full indexed holder set rather than only the fast cohort.
 - [ ] Add a validated hold-metric pipeline: median hold, profit-weighted hold, conviction hold, and baghold rate with explicit sample confidence.
 - [ ] Complete Fomo follower-edge coverage and the KOL frontrun graph without presenting unavailable data as zero.
 - [ ] Add rate limiting, provider budgets, durable caching, abuse protection, monitoring, and alerts before a broad public launch.
 - [ ] Validate `whoaped.xyz` after nameserver propagation and confirm apex redirect, `www`, HTTPS, canonical metadata, and sitemap.
 - [ ] Run a real multi-token/multi-profile validation cohort and measure identity precision, recall, freshness, latency, and provider cost.
+
+## 35. Completion record — first-party Fomo API foundation (2026-08-27)
+
+- [x] Add an append-only first-party Fomo leaderboard observation table, identity-evidence table, enriched token-holder observations, service-only grants, RLS, and replay-safe capture RPCs.
+- [x] Add WHOAPED-owned `GET/POST /api/platforms/fomo/observations`: GET serves the latest bounded 24h/7d/30d/all snapshot and POST validates and persists an authorized visible Fomo capture.
+- [x] Make first-party Fomo observations canonical for the mixed leaderboard and thesis path. FomoScan is contacted only when `FOMOSCAN_FALLBACK_ENABLED=true`.
+- [x] Add generic Fomo wallet resolution from precise balance intervals or repeated mint/side/time transaction fingerprints, require a unique match, and persist the evidence/version instead of guessing.
+- [x] Upgrade Companion to collect visible Fomo leaderboard rows, holder profiles, avatars, theses, and visible trade events without reading browser credentials or hidden storage.
+- [x] Add token images to trending/token pages and profile avatars to unified holder rows for persisted Fomo and live Pump identities.
+- [x] Remove the leaderboard confidence column and replace extension confidence presentation with measured wallet coverage. Keep raw win rate and capital-weighted return visible under the explicit `WR + WEIGHTED RETURN` label.
+- [x] Apply all three production database migrations, verify service-only access, and deploy `whoaped-data` Edge Function version 7.
+- [x] Verification passes: 20 Vitest files / 64 tests, TypeScript no-emit, extension JavaScript syntax, `git diff --check`, and the 29-page/route Next.js production build.
+- [ ] Complete a real multi-token/multi-profile Fomo capture cohort and publish precision/recall/freshness/cost measurements before claiming universal Fomo identity coverage.
+- [ ] Add a durable authorized collector or official founder-provided endpoint for unattended refreshes; a Vercel server cannot reuse a user's personal browser session.
+- [ ] Add launch-grade rate limiting, provider budgets, monitoring, and alerting.

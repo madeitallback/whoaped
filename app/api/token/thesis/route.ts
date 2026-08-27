@@ -14,11 +14,11 @@ export async function GET(request: Request) {
     let evidence = await readTokenTheses(mint);
     const newestCapture = evidence.reduce((latest, item) => Math.max(latest, Date.parse(item.capturedAt) || 0), 0);
     const cacheFresh = newestCapture > Date.now() - 15 * 60_000;
-    let provider: "cached" | "refreshed" | "not_configured" | "unavailable" = cacheFresh ? "cached" : "unavailable";
-    if (!cacheFresh) {
+    let provider: "first_party" | "fomoscan_fallback" | "collection_required" = evidence.length ? "first_party" : "collection_required";
+    if (!cacheFresh && process.env.FOMOSCAN_FALLBACK_ENABLED === "true") {
       try {
         const fomo = await fetchFomoTokenTheses(mint);
-        provider = fomo.configured ? "refreshed" : "not_configured";
+        provider = fomo.configured ? "fomoscan_fallback" : "collection_required";
         if (fomo.theses.length) {
           await persistFomoTokenTheses(mint, fomo.theses);
           evidence = await readTokenTheses(mint);

@@ -1,4 +1,5 @@
 import type { AnalysisProfile } from "@/lib/types";
+import { readFomoFirstPartyLeaderboard } from "./data/repository";
 
 export type SocialBoardPlatform = "pump" | "fomo";
 
@@ -11,7 +12,7 @@ export type SocialBoardRow = {
   avatarUrl: string | null;
   profileUrl: string;
   wallet: string | null;
-  metricLabel: "24H REALIZED PNL" | "WALLET PERF";
+  metricLabel: "24H REALIZED PNL" | "WR + WEIGHTED RETURN";
   primaryMetric: number | null;
   pnl24hUsd: number | null;
   volume24hUsd: number | null;
@@ -27,7 +28,7 @@ export type SocialBoardRow = {
 };
 
 type Json = Record<string, unknown>;
-type FomoLeaderboardResult = { rows: SocialBoardRow[]; capturedAt: string | null; configured: boolean; stale: boolean };
+type FomoLeaderboardResult = { rows: SocialBoardRow[]; capturedAt: string | null; configured: boolean; stale: boolean; source: "first_party" | "fomoscan" | "none" };
 let lastFomoLeaderboard: { value: FomoLeaderboardResult; savedAt: number } | null = null;
 const FOMO_STALE_FALLBACK_MS = 15 * 60 * 1000;
 
@@ -96,7 +97,7 @@ export function pumpProfilesToBoard(profiles: AnalysisProfile[]): SocialBoardRow
     avatarUrl: null,
     profileUrl: profile.handle ? `https://pump.fun/profile/${encodeURIComponent(profile.handle)}` : `https://solscan.io/account/${encodeURIComponent(profile.wallets[0].address)}`,
     wallet: profile.wallets[0].address,
-    metricLabel: "WALLET PERF",
+    metricLabel: "WR + WEIGHTED RETURN",
     primaryMetric: profile.metrics.score,
     pnl24hUsd: null,
     volume24hUsd: null,
@@ -113,8 +114,37 @@ export function pumpProfilesToBoard(profiles: AnalysisProfile[]): SocialBoardRow
 }
 
 export async function fetchFomoLeaderboard(): Promise<FomoLeaderboardResult> {
+  const observed = await readFomoFirstPartyLeaderboard("24h").catch(() => []);
+  if (observed.length) {
+    const capturedAt = observed[0].capturedAt;
+    const rows: SocialBoardRow[] = observed.map((row) => ({
+      id: `fomo:first-party:${row.normalizedHandle}`,
+      platform: "fomo",
+      platformRank: row.platformRank,
+      handle: row.handle,
+      label: row.displayName || row.handle,
+      avatarUrl: row.avatarUrl,
+      profileUrl: `https://fomo.family/profile/${encodeURIComponent(row.handle)}`,
+      wallet: null,
+      metricLabel: "24H REALIZED PNL",
+      primaryMetric: row.realizedPnlUsd,
+      pnl24hUsd: row.realizedPnlUsd,
+      volume24hUsd: row.volumeUsd,
+      trades24h: row.tradeCount,
+      followers: row.followerCount,
+      winRate: null,
+      weightedReturn: null,
+      medianHoldSeconds: null,
+      lastActivityAt: null,
+      sampleLabel: "Fomo first-party / rolling 24h",
+      sampleConfidence: null,
+      profitFactor: null,
+    }));
+    return { rows, capturedAt, configured: true, stale: Date.parse(capturedAt) < Date.now() - 15 * 60_000, source: "first_party" };
+  }
+  if (process.env.FOMOSCAN_FALLBACK_ENABLED !== "true") return { rows: [], capturedAt: null, configured: true, stale: false, source: "none" };
   const key = process.env.FOMOSCAN_API_KEY;
-  if (!key) return { rows: [], capturedAt: null, configured: false, stale: false };
+  if (!key) return { rows: [], capturedAt: null, configured: false, stale: false, source: "none" };
   const base = (process.env.FOMOSCAN_BASE || "https://api.fomoscan.sh").replace(/\/$/, "");
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 8_000);
@@ -124,7 +154,7 @@ export async function fetchFomoLeaderboard(): Promise<FomoLeaderboardResult> {
     });
     if (!response.ok) throw new Error(`FomoScan leaderboard returned ${response.status}.`);
     const payload = await response.json() as Json;
-    const value = { rows: parseFomoLeaderboard(payload), capturedAt: timestamp(payload.capturedAt), configured: true, stale: false };
+    const value = { rows: parseFomoLeaderboard(payload), capturedAt: timestamp(payload.capturedAt), configured: true, stale: false, source: "fomoscan" as const };
     if (value.rows.length) lastFomoLeaderboard = { value, savedAt: Date.now() };
     return value;
   } catch (error) {

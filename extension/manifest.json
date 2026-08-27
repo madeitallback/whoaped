@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
   "name": "WHOAPED Companion",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "WHOAPED token, wallet, follower, and authorized public social intelligence for Pump and Fomo.",
   "action": { "default_popup": "popup.html", "default_title": "WHOAPED" },
   "permissions": ["storage"],
-  "host_permissions": ["https://pump.fun/*", "https://fomo.family/*", "https://whoaped-phi.vercel.app/*", "http://localhost:3002/*", "http://127.0.0.1:3002/*"],
+  "host_permissions": ["https://pump.fun/*", "https://fomo.family/*", "https://whoaped.xyz/*", "https://www.whoaped.xyz/*", "https://whoaped-phi.vercel.app/*", "http://localhost:3002/*", "http://127.0.0.1:3002/*"],
   "background": { "service_worker": "background.js", "type": "module" },
   "content_scripts": [{
     "matches": ["https://pump.fun/*", "https://fomo.family/*"],

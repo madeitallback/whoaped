@@ -72,8 +72,32 @@
   }
 
   function parseMoney(text) {
-    const value = Number(String(text || "").replace(/[$,+%]/g, "").replace(/,/g, ""));
+    const normalized = String(text || "").replace(/[$,+%]/g, "").replace(/,/g, "").trim();
+    const match = normalized.match(/^(-?[0-9]+(?:\.[0-9]+)?)([KMB])?$/i);
+    if (!match) return null;
+    const multiplier = match[2]?.toUpperCase() === "B" ? 1e9 : match[2]?.toUpperCase() === "M" ? 1e6 : match[2]?.toUpperCase() === "K" ? 1e3 : 1;
+    const value = Number(match[1]) * multiplier;
     return Number.isFinite(value) ? value : null;
+  }
+
+  function visibleTradeEvents(scope) {
+    const events = [];
+    for (const row of scope.querySelectorAll("tr, li, article, [role='row']")) {
+      const text = (row.innerText || "").replace(/\s+/g, " ").trim();
+      const side = /\bbuy\b/i.test(text) ? "buy" : /\bsell\b/i.test(text) ? "sell" : null;
+      if (!side) continue;
+      const timeValue = row.querySelector("time")?.getAttribute("datetime") || row.querySelector("time")?.textContent || text.match(/\b\d{1,2}:\d{2}(?::\d{2})?\b/)?.[0];
+      if (!timeValue) continue;
+      let occurredAt = Date.parse(timeValue);
+      if (!Number.isFinite(occurredAt) && /^\d{1,2}:\d{2}/.test(timeValue)) {
+        const now = new Date(); const [hours, minutes, seconds = "0"] = timeValue.split(":");
+        now.setHours(Number(hours), Number(minutes), Number(seconds), 0); occurredAt = now.valueOf();
+      }
+      if (!Number.isFinite(occurredAt)) continue;
+      const amount = text.match(/([\d,.]+(?:\.\d+)?[KMB]?)\s+[A-Za-z][A-Za-z0-9._-]{0,15}/i)?.[1];
+      events.push({ side, occurredAt: new Date(occurredAt).toISOString(), amountUi: parseMoney(amount) });
+    }
+    return events.slice(0, 20);
   }
 
   function visibleFomoTokenHolders() {
@@ -93,13 +117,60 @@
       holders.set(handle.toLowerCase(), {
         handle,
         amountText: amountLine.split(/\s+/)[0],
+        avatarUrl: element.querySelector?.("img[src]")?.src || null,
+        thesisText: lines.find((line) => line.length >= 12 && /thesis|because|holding|conviction/i.test(line)) || null,
         holdTimeText: lines.find((line) => /avg\.?\s*hold|hold time|external wallet/i.test(line)) || null,
         valueUsd: parseMoney(moneyLines[0]),
         pnlUsd: parseMoney(moneyLines[1]),
         roiPct: parseMoney(roiLine),
+        trades: visibleTradeEvents(element),
       });
     }
     return [...holders.values()].slice(0, 100);
+  }
+
+  function fomoLeaderboardWindow() {
+    const text = `${window.location.search} ${document.querySelector('[aria-selected="true"], [data-state="active"]')?.textContent || ""}`.toLowerCase();
+    if (/\b7d\b|7-days?|7days?/.test(text)) return "7d";
+    if (/\b30d\b|30-days?|30days?/.test(text)) return "30d";
+    if (/\ball\b/.test(text)) return "all";
+    return "24h";
+  }
+
+  function visibleFomoLeaderboardRows() {
+    const anchors = [...document.querySelectorAll('a[href*="/profile/"]')];
+    const rows = new Map();
+    for (const anchor of anchors) {
+      const match = anchor.getAttribute("href")?.match(/\/profile\/([^/?#]+)/);
+      if (!match) continue;
+      const handle = decodeURIComponent(match[1]).replace(/^@/, "");
+      if (!handle || base58.test(handle)) continue;
+      const container = anchor.closest("tr, [role='row'], article, li") || anchor;
+      if (!container) continue;
+      const box = container.getBoundingClientRect();
+      if (!box.width || !box.height) continue;
+      const text = (container.innerText || "").replace(/\s+/g, " ").trim();
+      const rankText = text.match(/(?:^|\s)#?(\d{1,5})(?:\s|$)/)?.[1];
+      const money = [...text.matchAll(/[+-]?\$[\d,.]+(?:\.\d+)?[KMB]?/gi)].map((entry) => parseMoney(entry[0])).filter((value) => value !== null);
+      const followerText = text.match(/([\d,.]+(?:\.\d+)?[KMB]?)\s+followers?/i)?.[1];
+      const tradeText = text.match(/([\d,.]+(?:\.\d+)?[KMB]?)\s+trades?/i)?.[1];
+      const volumeText = text.match(/(?:volume|vol)\s*[:$]?\s*([\d,.]+(?:\.\d+)?[KMB]?)/i)?.[1];
+      const handleMarker = `@${handle}`;
+      const markerIndex = text.toLowerCase().indexOf(handleMarker.toLowerCase());
+      const displayName = (markerIndex > 0 ? text.slice(0, markerIndex) : anchor.textContent || handle).replace(/^\s*#?\d+\s*\.?\s*/, "").trim();
+      const compactCount = text.match(/\s(\d{1,6})\s*\+?\s*$/)?.[1];
+      rows.set(handle.toLowerCase(), {
+        handle,
+        displayName: displayName.slice(0, 128) || handle,
+        avatarUrl: container.querySelector("img[src]")?.src || null,
+        platformRank: rankText ? Number(rankText) : rows.size + 1,
+        realizedPnlUsd: money[0] ?? null,
+        volumeUsd: volumeText ? parseMoney(volumeText) : money[1] ?? null,
+        tradeCount: tradeText ? parseMoney(tradeText) : compactCount ? Number(compactCount) : null,
+        followerCount: followerText ? parseMoney(followerText) : null,
+      });
+    }
+    return [...rows.values()].slice(0, 500);
   }
 
   function mountFomoTokenHolderSync() {
@@ -229,7 +300,7 @@
     const noOnchainHistory = !profile.trades?.length;
     const score = metrics.score ?? "—";
     const scoreClass = typeof metrics.score === "number" && metrics.score >= 60 ? "high" : "";
-    card.innerHTML = `<div class="fa-inline-head"><span class="fa-inline-mark">↗</span><span>WHOAPED</span><span class="fa-inline-live">LIVE</span><button class="fa-inline-close" type="button" aria-label="Close WHOAPED">×</button></div><div class="fa-inline-main"><div class="fa-inline-score ${scoreClass}"><b>${score}</b><span>PERF BETA</span></div><div class="fa-inline-stat"><span>WIN RATE</span><b>${formatPercent(metrics.winRate)}</b></div><div class="fa-inline-stat"><span>WEIGHTED RETURN</span><b class="${(metrics.capitalWeightedReturn ?? 0) >= 0 ? "up" : "down"}">${formatReturn(metrics.capitalWeightedReturn)}</b></div><div class="fa-inline-stat"><span>MEDIAN HOLD</span><b>${formatHold(metrics.medianHoldSeconds)}</b></div></div><div class="fa-inline-foot"><span>${noOnchainHistory ? "○ no public Solana swaps found" : metrics.active ? "● active trader" : "○ no activity in last 30d"}</span><button type="button" class="fa-inline-watch">+ WATCH</button><a href="${endpoint}/?wallet=${encodeURIComponent(profile.wallets[0].address)}&source=${encodeURIComponent(profile.source)}" target="_blank" rel="noreferrer">DETAILS ↗</a></div>`;
+    card.innerHTML = `<div class="fa-inline-head"><span class="fa-inline-mark">↗</span><span>WHOAPED</span><span class="fa-inline-live">LIVE</span><button class="fa-inline-close" type="button" aria-label="Close WHOAPED">×</button></div><div class="fa-inline-main"><div class="fa-inline-score ${scoreClass}"><b>${score}</b><span>WR + RETURN</span></div><div class="fa-inline-stat"><span>WIN RATE</span><b>${formatPercent(metrics.winRate)}</b></div><div class="fa-inline-stat"><span>WEIGHTED RETURN</span><b class="${(metrics.capitalWeightedReturn ?? 0) >= 0 ? "up" : "down"}">${formatReturn(metrics.capitalWeightedReturn)}</b></div><div class="fa-inline-stat"><span>MEDIAN HOLD</span><b>${formatHold(metrics.medianHoldSeconds)}</b></div></div><div class="fa-inline-foot"><span>${noOnchainHistory ? "○ no public Solana swaps found" : metrics.active ? "● active trader" : "○ no activity in last 30d"}</span><button type="button" class="fa-inline-watch">+ WATCH</button><a href="${endpoint}/?wallet=${encodeURIComponent(profile.wallets[0].address)}&source=${encodeURIComponent(profile.source)}" target="_blank" rel="noreferrer">DETAILS ↗</a></div>`;
     bindClose(card);
     window.dispatchEvent(new Event("resize"));
     card.querySelector(".fa-inline-watch").addEventListener("click", async (event) => {
@@ -242,7 +313,7 @@
 
   function renderFollowerEdge(card, metrics, endpoint, wallet, label) {
     const edge = typeof metrics.followerEdge === "number" ? `${(metrics.followerEdge * 100).toFixed(1)}%` : "—";
-    card.innerHTML = `<div class="fa-inline-head"><span class="fa-inline-mark">↗</span><span>WHOAPED</span><span class="fa-inline-live">LIVE</span><button class="fa-inline-close" type="button" aria-label="Close WHOAPED">×</button></div><div class="fa-inline-main"><div class="fa-inline-score"><b>${edge}</b><span>FOLLOWER EDGE</span></div><div class="fa-inline-stat"><span>PROFITABLE / SCORABLE</span><b>${metrics.profitableFollowers} / ${metrics.scorableFollowers}</b></div><div class="fa-inline-stat"><span>ACTIVE 30D</span><b>${metrics.activeFollowers30d} / ${metrics.sampledFollowers}</b></div><div class="fa-inline-stat"><span>CONFIDENCE</span><b>${String(metrics.confidence || "low").toUpperCase()}</b></div></div><div class="fa-inline-foot"><span>${metrics.status === "ready" ? `● ${metrics.sampledFollowers} sampled / ${Number(metrics.visibleFollowers).toLocaleString()}` : "○ follower data unavailable"}</span><a href="${endpoint}/?followerWallet=${encodeURIComponent(wallet)}&followerLabel=${encodeURIComponent(label)}" target="_blank" rel="noreferrer">DETAILS ↗</a></div>`;
+    card.innerHTML = `<div class="fa-inline-head"><span class="fa-inline-mark">↗</span><span>WHOAPED</span><span class="fa-inline-live">LIVE</span><button class="fa-inline-close" type="button" aria-label="Close WHOAPED">×</button></div><div class="fa-inline-main"><div class="fa-inline-score"><b>${edge}</b><span>FOLLOWER EDGE</span></div><div class="fa-inline-stat"><span>PROFITABLE / SCORABLE</span><b>${metrics.profitableFollowers} / ${metrics.scorableFollowers}</b></div><div class="fa-inline-stat"><span>ACTIVE 30D</span><b>${metrics.activeFollowers30d} / ${metrics.sampledFollowers}</b></div><div class="fa-inline-stat"><span>WALLETS MAPPED</span><b>${metrics.scorableFollowers} / ${metrics.sampledFollowers}</b></div></div><div class="fa-inline-foot"><span>${metrics.status === "ready" ? `● ${metrics.sampledFollowers} sampled / ${Number(metrics.visibleFollowers).toLocaleString()}` : "○ follower data unavailable"}</span><a href="${endpoint}/?followerWallet=${encodeURIComponent(wallet)}&followerLabel=${encodeURIComponent(label)}" target="_blank" rel="noreferrer">DETAILS ↗</a></div>`;
     bindClose(card);
     window.dispatchEvent(new Event("resize"));
   }
@@ -274,7 +345,7 @@
   function renderFomoCollector(card, handle, cached, endpoint) {
     const ready = cached?.status === "ready" || cached?.status === "insufficient";
     const edge = typeof cached?.followerEdge === "number" ? `${(cached.followerEdge * 100).toFixed(1)}%` : "—";
-    card.innerHTML = `<div class="fa-inline-head"><span class="fa-inline-mark">↗</span><span>WHOAPED</span><span class="fa-inline-live">FOMO</span><button class="fa-inline-close" type="button" aria-label="Close WHOAPED">×</button></div>${ready ? `<div class="fa-inline-main"><div class="fa-inline-score"><b>${edge}</b><span>FOLLOWER EDGE</span></div><div class="fa-inline-stat"><span>PROFITABLE / SCORABLE</span><b>${cached.profitableFollowers} / ${cached.scorableFollowers}</b></div><div class="fa-inline-stat"><span>ACTIVE 30D</span><b>${cached.activeFollowers30d} / ${cached.sampledFollowers}</b></div><div class="fa-inline-stat"><span>CONFIDENCE</span><b>${String(cached.confidence).toUpperCase()}</b></div></div>` : `<p class="fa-inline-message">Open this profile's <b>Followers</b> list. WHOAPED reads only the visible profile links after your click—never cookies or session tokens.</p>`}<div class="fa-fomo-actions"><button type="button" class="fa-collect-followers">ANALYZE VISIBLE FOLLOWERS ↗</button><span>FomoScan identity → Dune realized history</span></div><div class="fa-inline-foot"><span>${ready ? `● saved snapshot · ${cached.sampledFollowers} wallets sampled` : "○ explicit collection required"}</span><a href="${endpoint}/?source=fomo&handle=${encodeURIComponent(handle)}&followerPlatform=fomo&followerHandle=${encodeURIComponent(handle)}" target="_blank" rel="noreferrer">DETAILS ↗</a></div>`;
+    card.innerHTML = `<div class="fa-inline-head"><span class="fa-inline-mark">↗</span><span>WHOAPED</span><span class="fa-inline-live">FOMO</span><button class="fa-inline-close" type="button" aria-label="Close WHOAPED">×</button></div>${ready ? `<div class="fa-inline-main"><div class="fa-inline-score"><b>${edge}</b><span>FOLLOWER EDGE</span></div><div class="fa-inline-stat"><span>PROFITABLE / SCORABLE</span><b>${cached.profitableFollowers} / ${cached.scorableFollowers}</b></div><div class="fa-inline-stat"><span>ACTIVE 30D</span><b>${cached.activeFollowers30d} / ${cached.sampledFollowers}</b></div><div class="fa-inline-stat"><span>WALLETS MAPPED</span><b>${cached.scorableFollowers} / ${cached.sampledFollowers}</b></div></div>` : `<p class="fa-inline-message">Open this profile's <b>Followers</b> list. WHOAPED reads only the visible profile links after your click—never cookies or session tokens.</p>`}<div class="fa-fomo-actions"><button type="button" class="fa-collect-followers">ANALYZE VISIBLE FOLLOWERS ↗</button><span>First-party identities → verified on-chain history</span></div><div class="fa-inline-foot"><span>${ready ? `● saved snapshot · ${cached.sampledFollowers} wallets sampled` : "○ explicit collection required"}</span><a href="${endpoint}/?source=fomo&handle=${encodeURIComponent(handle)}&followerPlatform=fomo&followerHandle=${encodeURIComponent(handle)}" target="_blank" rel="noreferrer">DETAILS ↗</a></div>`;
     bindClose(card);
     card.querySelector(".fa-collect-followers")?.addEventListener("click", async (event) => {
       const button = event.currentTarget;
@@ -302,7 +373,7 @@
     if (!anchor) return false;
     const card = mountInline(anchor);
     const result = await chrome.runtime.sendMessage({ type: "whoaped:fomo-follower-edge", handle });
-    renderFomoCollector(card, handle, result?.ok ? result.data : null, result?.endpoint || "https://whoaped-phi.vercel.app");
+    renderFomoCollector(card, handle, result?.ok ? result.data : null, result?.endpoint || "https://www.whoaped.xyz");
     return true;
   }
 
@@ -347,20 +418,30 @@
 
   function mountLeaderboardImporter() {
     const path = window.location.pathname;
-    if ((!isPump && !isFomo) || profileMatch || (!path.includes("leaderboard") && !path.includes("profiles"))) return;
+    if ((!isPump && !isFomo) || profileMatch) return;
+    if (isPump && !path.includes("leaderboard") && !path.includes("profiles")) return;
     const links = [...document.querySelectorAll('a[href^="/profile/"]')];
     if (!links.length || document.querySelector("#follower-alpha-launcher")) return;
     const root = document.createElement("aside"); root.id = "follower-alpha-launcher";
-    root.innerHTML = `<button class="fa-close" title="Close">×</button><div class="fa-kicker">WHOAPED / PILOT</div><div class="fa-title">${isPump ? "Analyze visible Pump wallets" : "Queue visible Fomo traders"}</div><div class="fa-note">${isPump ? "Creates individual Wallet Performance Beta results for up to 12 visible profiles." : "A public wallet mapping is required before a Fomo trader can be analyzed."}</div><button>QUEUE VISIBLE PROFILES</button>`;
+    root.innerHTML = `<button class="fa-close" title="Close">×</button><div class="fa-kicker">WHOAPED / LIVE SOURCE</div><div class="fa-title">${isPump ? "Analyze visible Pump wallets" : "Sync the visible Fomo leaderboard"}</div><div class="fa-note">${isPump ? "Creates transparent wallet results for up to 12 visible profiles." : "Persists rank, PnL, avatar and profile source directly from your authorized Fomo session. FomoScan is not used."}</div><button>${isPump ? "QUEUE VISIBLE PROFILES" : "SYNC VISIBLE FOMO ROWS ↗"}</button>`;
     const brandStyle = document.createElement("style");
     brandStyle.textContent = '#follower-alpha-launcher:before{content:"WHOAPED Profile Import"}';
     root.append(brandStyle);
     root.querySelector(".fa-close").onclick = () => root.remove();
-    root.querySelector("button:not(.fa-close)").onclick = () => {
+    root.querySelector("button:not(.fa-close)").onclick = async (event) => {
+      if (isFomo) {
+        const button = event.currentTarget;
+        const rows = visibleFomoLeaderboardRows();
+        if (!rows.length) { button.textContent = "SCROLL TO THE BOARD, THEN RETRY"; return; }
+        button.disabled = true; button.textContent = `SYNCING ${rows.length} FOMO PROFILES…`;
+        const result = await chrome.runtime.sendMessage({ type: "whoaped:fomo-observations", sourceUrl: window.location.href, window: fomoLeaderboardWindow(), rows });
+        button.disabled = false; button.textContent = result?.ok ? `✓ ${result.data.captured} FOMO PROFILES SAVED` : result?.error || "RETRY SYNC";
+        return;
+      }
       const candidates = [...new Map(links.map((link) => { const address = link.getAttribute("href").split("/").pop(); return [address, { source: "pump", label: link.textContent.trim().slice(0, 48) || address, solanaAddress: address }]; })).values()].filter((item) => base58.test(item.solanaAddress)).slice(0, 12);
       chrome.storage.local.get(["whoApedEndpoint", "whoHeldEndpoint", "followerAlphaEndpoint"], ({ whoApedEndpoint, whoHeldEndpoint, followerAlphaEndpoint }) => {
-        const base = (whoApedEndpoint || whoHeldEndpoint || followerAlphaEndpoint || "https://whoaped-phi.vercel.app").replace(/\/$/, "");
-        const params = isPump ? { candidates: btoa(JSON.stringify(candidates)) } : { fomoCandidates: btoa(JSON.stringify([...new Set(links.map((link) => link.getAttribute("href").split("/").pop()))].slice(0, 12))) };
+        const base = (whoApedEndpoint || whoHeldEndpoint || followerAlphaEndpoint || "https://www.whoaped.xyz").replace(/\/$/, "");
+        const params = { candidates: btoa(JSON.stringify(candidates)) };
         window.open(`${base}/?${new URLSearchParams(params).toString()}`, "_blank", "noopener");
       });
     };
@@ -374,5 +455,6 @@
     if (!document.querySelector("#follower-alpha-inline") && attempts < 15) setTimeout(waitForProfile, 600);
   };
   setTimeout(waitForProfile, 700);
+  if (isFomo) setInterval(() => { mountLeaderboardImporter(); mountFomoTokenHolderSync(); }, 2500);
   document.addEventListener("mouseup", () => setTimeout(mountThesisCapture, 0));
 })();

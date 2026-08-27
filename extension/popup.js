@@ -1,7 +1,7 @@
 const input = document.querySelector("#wallet");
 const endpointInput = document.querySelector("#endpoint");
 const button = document.querySelector("#open");
-const endpoint = "https://whoaped-phi.vercel.app";
+const endpoint = "https://www.whoaped.xyz";
 
 chrome.storage.local.get(["whoApedEndpoint", "whoHeldEndpoint", "followerAlphaEndpoint"], ({ whoApedEndpoint, whoHeldEndpoint, followerAlphaEndpoint }) => {
   const savedEndpoint = whoApedEndpoint || whoHeldEndpoint || followerAlphaEndpoint;

@@ -1,6 +1,7 @@
 import { persistFomoHolderCaptures, readTokenActivity } from "@/lib/data/repository";
 import { isSupabaseConfigured } from "@/lib/data/supabase";
-import { resolveFomoHolderCaptures, type FomoHolderCapture } from "@/lib/token-intel/fomo-holder-capture";
+import { resolveFomoHolderCapturesWithEvidence, type FomoHolderCapture, type FomoObservedTrade } from "@/lib/token-intel/fomo-holder-capture";
+import { fetchFomoWalletTradeEvidence } from "@/lib/token-intel/fomo-chain-evidence";
 import { parseMintInput } from "@/lib/token-intel/solana";
 
 export const runtime = "nodejs";
@@ -27,12 +28,30 @@ export async function POST(request: Request) {
     const row = item as Record<string, unknown>;
     if (typeof row.handle !== "string" || typeof row.amountText !== "string") return [];
     const optionalNumber = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? value : null;
-    return [{ handle: row.handle, amountText: row.amountText, holdTimeText: typeof row.holdTimeText === "string" ? row.holdTimeText : null, valueUsd: optionalNumber(row.valueUsd), pnlUsd: optionalNumber(row.pnlUsd), roiPct: optionalNumber(row.roiPct) }];
+    const trades = Array.isArray(row.trades) ? row.trades.flatMap((trade): FomoObservedTrade[] => {
+      if (!trade || typeof trade !== "object") return [];
+      const value = trade as Record<string, unknown>;
+      const occurredAt = typeof value.occurredAt === "string" ? value.occurredAt : "";
+      if ((value.side !== "buy" && value.side !== "sell") || !Number.isFinite(Date.parse(occurredAt))) return [];
+      return [{ side: value.side, occurredAt: new Date(occurredAt).toISOString(), amountUi: optionalNumber(value.amountUi) }];
+    }).slice(0, 20) : [];
+    return [{
+      handle: row.handle,
+      amountText: row.amountText,
+      avatarUrl: typeof row.avatarUrl === "string" ? row.avatarUrl.slice(0, 2_000) : null,
+      thesisText: typeof row.thesisText === "string" ? row.thesisText.slice(0, 4_000) : null,
+      holdTimeText: typeof row.holdTimeText === "string" ? row.holdTimeText : null,
+      valueUsd: optionalNumber(row.valueUsd), pnlUsd: optionalNumber(row.pnlUsd), roiPct: optionalNumber(row.roiPct), trades,
+    }];
   });
   if (!captures.length) return Response.json({ error: "No valid visible holder row was found." }, { status: 400 });
 
   const activity = await readTokenActivity(mint);
-  const resolved = resolveFomoHolderCaptures(captures, activity.positions.filter((position) => position.balanceUi > 0));
+  const resolved = await resolveFomoHolderCapturesWithEvidence(
+    captures,
+    activity.positions.filter((position) => position.balanceUi > 0),
+    (wallet, trades) => fetchFomoWalletTradeEvidence(wallet, mint, trades),
+  );
   const affected = await persistFomoHolderCaptures(mint, sourceUrl, resolved);
   const linked = resolved.filter((capture) => capture.wallet).length;
   return Response.json({ captured: affected, linked, unresolved: resolved.length - linked, holderSnapshotReady: activity.positions.some((position) => position.balanceUi > 0) }, { headers: { "Cache-Control": "private, no-store" } });
