@@ -236,11 +236,10 @@ type FomoLeaderboardRow = {
 
 export async function readFomoFirstPartyLeaderboard(window: FomoLeaderboardObservation["window"] = "24h"): Promise<FomoLeaderboardObservation[]> {
   if (!isSupabaseConfigured()) return [];
-  const latestResponse = await supabaseRequest(`fomo_leaderboard_observations?period=eq.${window}&select=captured_at&order=captured_at.desc&limit=1`);
-  const latest = await latestResponse.json() as Array<{ captured_at: string }>;
-  if (!latest[0]?.captured_at) return [];
-  const response = await supabaseRequest(`fomo_leaderboard_observations?period=eq.${window}&captured_at=eq.${encodeURIComponent(latest[0].captured_at)}&select=*&order=platform_rank.asc&limit=500`);
-  const rows = await response.json() as FomoLeaderboardRow[];
+  const response = await supabaseRequest(`fomo_leaderboard_observations?period=eq.${window}&select=*&order=captured_at.desc,platform_rank.asc&limit=500`);
+  const candidates = await response.json() as FomoLeaderboardRow[];
+  const latestCapturedAt = candidates[0]?.captured_at;
+  const rows = latestCapturedAt ? candidates.filter((row) => row.captured_at === latestCapturedAt) : [];
   return rows.map((row) => ({
     window: row.period,
     normalizedHandle: row.normalized_handle,
