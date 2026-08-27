@@ -1997,6 +1997,7 @@ Decision: the Windows 97 direction was explored and then intentionally rejected 
 - [x] Remove the leaderboard confidence column and replace extension confidence presentation with measured wallet coverage. Keep raw win rate and capital-weighted return visible under the explicit `WR + WEIGHTED RETURN` label.
 - [x] Apply all three production database migrations, verify service-only access, and deploy `whoaped-data` Edge Function version 7.
 - [x] Verification passes: 20 Vitest files / 64 tests, TypeScript no-emit, extension JavaScript syntax, `git diff --check`, and the 29-page/route Next.js production build.
+- [x] Push commit `0c928e5` to `madeitallback/whoaped/main`; Vercel production is live, `whoaped.xyz` redirects to `www`, HTTPS/health/Supabase pass, the first-party Fomo GET endpoint responds, and the deployed leaderboard renders without console errors.
 - [ ] Complete a real multi-token/multi-profile Fomo capture cohort and publish precision/recall/freshness/cost measurements before claiming universal Fomo identity coverage.
 - [ ] Add a durable authorized collector or official founder-provided endpoint for unattended refreshes; a Vercel server cannot reuse a user's personal browser session.
 - [ ] Add launch-grade rate limiting, provider budgets, monitoring, and alerting.
