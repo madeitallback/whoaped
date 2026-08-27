@@ -12,6 +12,7 @@ coverage
 *.tsbuildinfo
 
 .vercel
+supabase/.temp/
 
 # Generated browser-extension release bundles. The canonical source lives in /extension.
 *-Extension-v*.zip

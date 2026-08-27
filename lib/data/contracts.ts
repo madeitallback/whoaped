@@ -67,3 +67,26 @@ export type PersistedCoverage = {
   holdersShown: number;
   labelsChecked: number;
 };
+
+export type TokenWalletActivity = {
+  wallet: string;
+  balanceUi: number;
+  pctOfSupply: number;
+  firstBuyAt: string | null;
+  lastBuyAt: string | null;
+  lastSellAt: string | null;
+  buyTxCount: number;
+  sellTxCount: number;
+  status: "holding" | "trimmed" | "exited" | "not_held";
+  observedAt: string;
+};
+
+export type TokenTradeActivityEvent = {
+  signature: string;
+  wallet: string;
+  venue: "curve" | "pumpswap";
+  phase: "pre_grad" | "post_grad";
+  side: "buy" | "sell";
+  quantityRaw: string | null;
+  occurredAt: string | null;
+};

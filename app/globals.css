@@ -224,7 +224,12 @@ input,textarea { width:100%;margin-top:5px;padding:8px;color:#000;background:var
 .timeline-list a { color:var(--title); }
 .timeline-list .source-pill { margin-left:6px; }
 .timeline-kind { display:inline-flex;justify-content:center;padding:3px 5px;color:#fff;background:var(--title);font:700 9px "Lucida Console",monospace; }
+.timeline-kind.sold { background:#a40000; }
 .timeline-kind.thesis { background:#7b287d; }
+.position-state { display:inline-block;padding:3px 6px;color:#fff;background:#606060;font:700 9px "Lucida Console",monospace; }
+.position-state.holding { background:#006400; }
+.position-state.trimmed { color:#000;background:#ffd34d; }
+.position-state.exited { background:#a40000; }
 .thesis-list { display:grid;gap:6px;padding:7px; }
 .thesis-list article { padding:10px;background:#fff;border:2px solid;border-color:#808080 #fff #fff #808080; }
 .thesis-list article>div,.thesis-list article footer { display:flex;align-items:center;flex-wrap:wrap;gap:7px;font:9px "Lucida Console",monospace; }

@@ -1740,3 +1740,20 @@ Provider cost/performance impact: Birdeye cache 45 seconds; persisted Fomo thesi
 Remaining blocker: no blocker for this vertical. The three platform-depth items above remain later phases.
 Exact next phase: verified sell/position reconciliation, then complete Fomo follower collection and extension-based coverage.
 Commit/deployment identifiers: Git commit `381ee1b92ce0b0ae5c2ac337753bd0c3068f47ef`; Vercel deployment `dpl_H17fEeku5a3GY6By3D5a9LN2g1Cp` (`READY`).
+
+## 26. Completion record — verified sell and position reconciliation (2026-08-27)
+
+- Replaced buy-only historical evidence with append-only `token_trade_events` covering both `buy` and `sell`, while migrating every existing verified buy.
+- Decoder inputs are pinned to the official Pump program IDL commit `3c6721a67c0b206b39130b454c8ba22a83ce972e` and PumpSwap IDL commit `2c22246b670812e2392e5f94b9543f500d6c9e15`.
+- Curve and PumpSwap workers now inspect top-level and nested inner instructions, verify the official program, discriminator, mint, curve/pool account layout, and signer wallet before accepting an event.
+- Exact base-token quantities are retained when the instruction variant exposes them; exact-quote variants are explicitly stored with a null token quantity instead of inventing a value.
+- Added `reconcile_token_trade_activity(text)` and changed complete holder replacement to preserve historical wallets at zero balance. This prevents exited wallets and their timestamps from disappearing after a new holder snapshot.
+- Position states are deterministic: `HOLDING` means positive balance with no verified sell, `TRIMMED` means positive balance after a verified sell, `EXITED` means zero balance after a verified sell, and `NOT_HELD` never falsely claims a sale.
+- Added `/api/token/activity` plus the token workspace position table and chronological verified sell events.
+- Historical jobs use `decoder_version: 2` and new idempotency keys, so tokens indexed by the old buy-only decoder are safely reprocessed.
+- Migration `20260827065611_token_trade_reconciliation.sql` applied to Supabase project `afhbwkpqxxtvqcjfcktg`; 71 previous buys migrated and a 17-wallet reconciliation sample executed successfully.
+- `whoaped-data` Edge Function version 4 is active. `anon` and `authenticated` have no table or RPC access; only `service_role` can read/write/reconcile.
+- Supabase advisors report no warning/error findings. The INFO-only RLS-without-policy notices are intentional for service-only tables, and the new-index notices are expected before production traffic accumulates.
+- Verification: 46/46 tests pass and TypeScript passes. Production build and smoke verification are the release gate for this phase.
+
+Remaining platform-depth work after this phase: complete Fomo follower collection and broader long-history social identity coverage.

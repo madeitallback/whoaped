@@ -1,10 +1,11 @@
 import type { TokenScan } from "../token-intel/types";
-import type { VerifiedBuyEvent } from "../token-intel/buyers";
+import type { VerifiedTradeEvent } from "../token-intel/buyers";
 import type { FomoIdentity } from "../token-intel/types";
-import type { TokenSocialActor, TokenThesisEvidence } from "./contracts";
+import type { TokenSocialActor, TokenThesisEvidence, TokenTradeActivityEvent, TokenWalletActivity } from "./contracts";
 import type { ThesisCaptureInput } from "../thesis-evidence";
 import type { PlatformProfileRecord } from "../platforms/types";
 import type { FomoTokenThesis } from "../token-intel/fomo-theses";
+import { positionStatus } from "../token-intel/activity";
 import { isSupabaseConfigured, supabaseRequest } from "./supabase";
 
 export type ClaimedJob = {
@@ -99,7 +100,7 @@ async function enqueueHistoryJob(jobType: "curve_history_v1" | "pumpswap_history
   await supabaseRequest("ingestion_jobs?on_conflict=idempotency_key", {
     method: "POST",
     headers: { Prefer: "resolution=ignore-duplicates,return=minimal" },
-    body: JSON.stringify({ job_type: jobType, resource_key: mint, idempotency_key: `${jobType}:${mint}:decoder-1`, status: "queued", payload: { ...payload, mint, cursor: null, pages: 0, scanned_signatures: 0, buyers_found: 0, decoder_version: 1 } }),
+    body: JSON.stringify({ job_type: jobType, resource_key: mint, idempotency_key: `${jobType}:${mint}:decoder-2`, status: "queued", payload: { ...payload, mint, cursor: null, pages: 0, scanned_signatures: 0, events_found: 0, decoder_version: 2 } }),
   });
   return true;
 }
@@ -126,13 +127,35 @@ export async function replaceTokenPositions(mint: string, observedAt: string, po
   return Number(await response.json());
 }
 
-export async function upsertVerifiedBuyEvents(mint: string, events: VerifiedBuyEvent[]) {
+export async function upsertVerifiedTradeEvents(mint: string, events: VerifiedTradeEvent[]) {
   if (!events.length) return;
-  await supabaseRequest("token_buy_events?on_conflict=mint,signature,wallet,venue", {
+  await supabaseRequest("token_trade_events?on_conflict=mint,signature,wallet,venue,side", {
     method: "POST",
     headers: preferMerge,
-    body: JSON.stringify(events.map((event) => ({ mint, signature: event.signature, wallet: event.owner, venue: event.venue, phase: event.phase, occurred_at: event.at, decoder_version: 1 }))),
+    body: JSON.stringify(events.map((event) => ({ mint, signature: event.signature, wallet: event.owner, venue: event.venue, phase: event.phase, side: event.side, quantity_raw: event.quantityRaw, occurred_at: event.at, decoder_version: 2, decoder_variant: event.decoderVariant }))),
   });
+  await supabaseRequest("rpc/reconcile_token_trade_activity", { method: "POST", body: JSON.stringify({ activity_mint: mint }) });
+}
+
+type ActivityPositionRow = { wallet: string; balance_ui: number | string; pct_of_supply: number | string | null; first_buy_at: string | null; last_buy_at: string | null; last_sell_at: string | null; buy_tx_count: number; sell_tx_count: number; observed_at: string };
+type ActivityEventRow = { signature: string; wallet: string; venue: TokenTradeActivityEvent["venue"]; phase: TokenTradeActivityEvent["phase"]; side: TokenTradeActivityEvent["side"]; quantity_raw: string | null; occurred_at: string | null };
+
+export async function readTokenActivity(mint: string) {
+  if (!isSupabaseConfigured()) return { positions: [] as TokenWalletActivity[], events: [] as TokenTradeActivityEvent[] };
+  const [positionResponse, eventResponse] = await Promise.all([
+    supabaseRequest(`token_positions?mint=eq.${encodeURIComponent(mint)}&or=(buy_tx_count.gt.0,sell_tx_count.gt.0)&select=wallet,balance_ui,pct_of_supply,first_buy_at,last_buy_at,last_sell_at,buy_tx_count,sell_tx_count,observed_at&order=buy_tx_count.desc&limit=500`),
+    supabaseRequest(`token_trade_events?mint=eq.${encodeURIComponent(mint)}&select=signature,wallet,venue,phase,side,quantity_raw,occurred_at&order=occurred_at.desc.nullslast&limit=200`),
+  ]);
+  const rows = await positionResponse.json() as ActivityPositionRow[];
+  const eventRows = await eventResponse.json() as ActivityEventRow[];
+  return {
+    positions: rows.map((row) => {
+      const balanceUi = Number(row.balance_ui);
+      const status = positionStatus(balanceUi, row.sell_tx_count);
+      return { wallet: row.wallet, balanceUi, pctOfSupply: Number(row.pct_of_supply || 0), firstBuyAt: row.first_buy_at, lastBuyAt: row.last_buy_at, lastSellAt: row.last_sell_at, buyTxCount: row.buy_tx_count, sellTxCount: row.sell_tx_count, status, observedAt: row.observed_at };
+    }),
+    events: eventRows.map((row) => ({ signature: row.signature, wallet: row.wallet, venue: row.venue, phase: row.phase, side: row.side, quantityRaw: row.quantity_raw, occurredAt: row.occurred_at })),
+  };
 }
 
 export async function persistFomoIdentities(mint: string, identities: Map<string, FomoIdentity>, holderWallets: Set<string>, buyerWallets: Set<string>) {

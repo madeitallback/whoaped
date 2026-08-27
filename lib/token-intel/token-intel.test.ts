@@ -1,7 +1,7 @@
 import bs58 from "bs58";
 import { PublicKey } from "@solana/web3.js";
 import { describe, expect, it } from "vitest";
-import { pumpBuyOwner } from "./buyers";
+import { pumpBuyOwner, pumpTradeEvent } from "./buyers";
 import { parseFomoScanProfile } from "./fomoscan";
 import { deriveBondingCurve, parseMintInput, PUMP_PROGRAM } from "./solana";
 
@@ -30,6 +30,19 @@ describe("verified Pump buys", () => {
     expect(pumpBuyOwner({ programId: PUMP_PROGRAM.toBase58(), accounts: legacy, data: bs58.encode(Buffer.from("66063d1201daebea", "hex")) }, mint, curve)).toBe("legacy-user");
     legacy[3] = "wrong";
     expect(pumpBuyOwner({ programId: PUMP_PROGRAM.toBase58(), accounts: legacy, data: bs58.encode(Buffer.from("66063d1201daebea", "hex")) }, mint, curve)).toBeNull();
+  });
+
+  it("decodes a curve sell without treating it as a buy", () => {
+    const mint = "Mint111111111111111111111111111111111111111";
+    const curve = "Curve11111111111111111111111111111111111111";
+    const accounts = Array.from({ length: 7 }, (_, index) => `account-${index}`);
+    accounts[2] = mint; accounts[3] = curve; accounts[6] = "seller";
+    const data = Buffer.alloc(16);
+    Buffer.from("33e685a4017f83ad", "hex").copy(data);
+    data.writeBigUInt64LE(99n, 8);
+    const instruction = { programId: PUMP_PROGRAM.toBase58(), accounts, data: bs58.encode(data) };
+    expect(pumpTradeEvent(instruction, mint, curve)).toMatchObject({ owner: "seller", side: "sell", quantityRaw: "99" });
+    expect(pumpBuyOwner(instruction, mint, curve)).toBeNull();
   });
 });
 

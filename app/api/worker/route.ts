@@ -1,5 +1,5 @@
 import { PublicKey } from "@solana/web3.js";
-import { claimIngestionJobs, completeIngestionJob, continueIngestionJob, failIngestionJob, persistTokenScan, replaceTokenPositions, upsertVerifiedBuyEvents } from "@/lib/data/repository";
+import { claimIngestionJobs, completeIngestionJob, continueIngestionJob, failIngestionJob, persistTokenScan, replaceTokenPositions, upsertVerifiedTradeEvents } from "@/lib/data/repository";
 import { isSupabaseConfigured } from "@/lib/data/supabase";
 import { indexAllHolders } from "@/lib/indexing/holders";
 import { findPumpSwapBuyerPage } from "@/lib/indexing/pumpswap";
@@ -47,13 +47,13 @@ async function runWorker(request: Request) {
         const page = job.job_type === "curve_history_v1"
           ? await findCurveBuyerPage(connection(), new PublicKey(String(job.payload.curve)), mint, cursor)
           : await findPumpSwapBuyerPage(connection(), mint, cursor);
-        await upsertVerifiedBuyEvents(mint.toBase58(), page.events);
+        await upsertVerifiedTradeEvents(mint.toBase58(), page.events);
         const nextPayload = {
           ...job.payload,
           cursor: page.nextCursor,
           pages: Number(job.payload.pages || 0) + 1,
           scanned_signatures: Number(job.payload.scanned_signatures || 0) + page.scannedSignatures,
-          buyers_found: Number(job.payload.buyers_found || 0) + page.events.length,
+          events_found: Number(job.payload.events_found || 0) + page.events.length,
         };
         if (page.nextCursor && Number(nextPayload.pages) < MAX_HISTORY_PAGES_PER_JOB) {
           await continueIngestionJob(job.id, nextPayload);

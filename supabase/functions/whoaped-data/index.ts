@@ -3,11 +3,12 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 const EXPECTED_SECRET_HASH = "d73c04112f1a656fef06eeb154154fb67864942d1d418a966f38172bfb977c7c";
 const ALLOWED_RESOURCES = new Set([
   "profiles", "watchlist", "tokens", "token_positions", "ingestion_jobs",
-  "token_buy_events", "token_social_actors", "thesis_evidence",
+  "token_buy_events", "token_trade_events", "token_social_actors", "thesis_evidence",
 ]);
 const ALLOWED_RPCS = new Set([
   "claim_ingestion_jobs", "replace_token_positions", "upsert_fomo_identity_batch",
   "capture_thesis_evidence", "capture_fomoscan_thesis_batch", "upsert_pump_identity_batch",
+  "reconcile_token_trade_activity",
 ]);
 
 async function sha256(value: string) {
