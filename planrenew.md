@@ -1794,5 +1794,7 @@ Metric/API versions introduced: existing `follower-v1-sample`, now platform-tagg
 Tests run and results: 50/50 Vitest tests pass; extension scripts pass syntax checks; Next production build passes with 21 routes.
 Known partial-data behavior: a cold Fomo profile returns `collection_required`; unresolved or walletless followers remain coverage evidence but never enter the performance denominator.
 Provider cost/performance impact: at most 100 FomoScan resolutions and 40 wallets in one Dune batch per explicit collection; persisted snapshots prevent repeat work on ordinary reads.
-Remaining blocker: final production deployment and an authenticated, user-triggered Fomo UI capture smoke test.
-Exact next phase: deploy, open a real Fomo follower modal with Companion, capture a snapshot, reload it from WHOAPED, then expand historical identity coverage.
+Production verification: commit `6a437c5458a93758a197e7508aaa8e6043ac82fd` deployed as `dpl_423cNkds1ugrDjZ9EqT22TVRTLVk` (`READY`). The canonical production GET resolved `@frankdegods` through FomoScan, reached Supabase, and returned the expected honest `collection_required` contract; Vercel reported no runtime errors for the route.
+Remaining blocker: no implementation or deployment blocker. The first real relationship snapshot must intentionally originate from a signed-in user's visible Fomo Followers modal through Companion; it cannot be fabricated in an automated server smoke test.
+Exact next phase: reload/install Companion `0.9.0`, capture one real Fomo profile snapshot, confirm its persisted reload, then expand historical identity coverage.
+Commit/deployment identifiers: `6a437c5458a93758a197e7508aaa8e6043ac82fd`; `dpl_423cNkds1ugrDjZ9EqT22TVRTLVk` (`READY`).
