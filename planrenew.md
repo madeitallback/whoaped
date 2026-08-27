@@ -1950,31 +1950,30 @@ Honest coverage boundary: the live token page always shows on-chain holders. Pum
 
 Production verification: functional commit `eeb016aba8d23275b9c4854a1b6d201050308d9f` deployed automatically from `madeitallback/whoaped/main` as `dpl_8pdidNPQByEHoG9mfEcH12TstpeH` (`READY`). The real `aura` token page rendered 1,000 current wallet positions; Pump profiles appeared inside their matching wallet rows with token amount, USD value, supply share, profile link, and Solscan link, while unidentified wallets remained visible. The browser console was clean. Vercel runtime logs contained only the known FomoScan quota-402 thesis refresh warnings; the route returned its cached/fallback 200 response and the new first-party holder capture path does not depend on that quota.
 
-## 34. Approved-first design phase — modern Windows 97 (2026-08-27)
+## 34. Completion record — Signal Deck product redesign (2026-08-27)
 
-Status: mockup produced; implementation intentionally not started until visual approval. Reference artifact: `docs/design/whoaped-win97-modern-mockup-v1.png`.
+Decision: the Windows 97 direction was explored and then intentionally rejected because its chrome competed with the product's information. The approved direction is Option A, `Signal Deck`: a simple light fintech surface inspired by the clarity of social/token products without copying Pump or Fomo. The Win97 mockup remains only as an archived exploration at `docs/design/whoaped-win97-modern-mockup-v1.png`.
 
-### Visual direction
+### Visual and interaction contract
 
-- Use Windows 95/98-era window chrome as the interaction language: cobalt title bars, square controls, restrained bevels, one-pixel highlights/shadows, desktop-style status bar, and compact tabs.
-- Modernize the content layer: warm light-gray shell, off-white data surfaces, generous but efficient spacing, accessible contrast, clean sans-serif values, and monospace/pixel labels.
-- Keep Pump mint and Fomo violet strictly semantic. Avoid neon, glassmorphism, gradients, dark cyberpunk terminal styling, giant marketing headlines, and nostalgia for its own sake.
-- Make `PUMP + FOMO HOLDER MAP` the dominant window. One row remains one wallet position; multiple platform profiles live in the profile cell.
-- Default to a paginated top-holder view instead of rendering 1,000 DOM rows. Expose search, sorting, row-count control, and filters for all/Pump/Fomo.
-- Keep the thesis feed and signal summary in a right rail so wallet ownership remains the first answer and social context remains immediately adjacent.
-- Preserve explicit unidentified, unresolved, stale, partial, external-transfer, and no-hold-time states.
-- Use a bottom status bar for network, index coverage, and freshness rather than scattering status pills across the page.
+- [x] Replace the retro desktop/sidebar/status-bar shell with one compact dark top navigation and a calm off-white workspace.
+- [x] Use restrained cards, one-pixel borders, eight-to-ten-pixel radii, minimal shadow, sans-serif hierarchy, and monospace only for addresses, numbers, status, and provenance.
+- [x] Keep cobalt as the primary action color, Pump mint and Fomo violet as semantic sources, and red/green only for real performance states.
+- [x] Make the unified Pump + Fomo holder table the dominant token surface; keep one wallet position per row and attach every verified platform profile to that wallet.
+- [x] Keep public thesis evidence in a narrow adjacent rail and reduce the signal summary to measured coverage counts rather than inventing a blended score.
+- [x] Add All/Pump/Fomo filtering, profile-or-wallet search, page-size selection, bounded pagination, and explicit empty/indexing/error states.
+- [x] Remove the duplicated 1,000-row actor, position, ownership, and timeline tables. Retain only a compact verified event log below the primary holder map.
+- [x] Apply the same Signal Deck system to Explore/token search, trending tokens, the mixed daily leaderboard, methodology, and global navigation/footer.
+- [x] Add responsive layouts: the token thesis rail stacks below the holder table, navigation condenses, cards reflow, and wide evidence tables remain horizontally scrollable without deleting column meaning.
 
-### Interface implementation checklist after approval
+### Verification
 
-- [ ] Extract design tokens for Win97-modern colors, borders, shadows, spacing, typography, focus states, and semantic Pump/Fomo/status accents.
-- [ ] Build reusable primitives: desktop shell, title bar, window panel, toolbar tabs, status bar, metric tile, profile chip, position badge, and pagination.
-- [ ] Rebuild the token workspace first; this is the canonical product surface.
-- [ ] Add holder search, deterministic sorting, pagination/virtualization, and mobile/tablet responsive behavior without losing column meaning.
-- [ ] Rework the thesis feed and signal summary into compact adjacent evidence panels.
-- [ ] Apply the same system to homepage/trending, mixed leaderboard, methodology, loading, empty, degraded, and error states.
-- [ ] Re-skin Companion only after the web product is approved; do not let extension work block the site redesign.
-- [ ] Run accessibility, keyboard navigation, responsive, performance, visual-regression, and real-token browser verification before deployment.
+- [x] TypeScript passes with no emit.
+- [x] All 60 Vitest tests pass.
+- [x] The 28-route Next.js 16 production build passes.
+- [x] `git diff --check` passes.
+- [x] Local browser verification confirms meaningful content, navigation and token input are accessible, no framework overlay appears, and no console errors are emitted on the Signal Deck homepage.
+- [x] The token error/degraded state renders cleanly when sandboxed provider access is unavailable. Full real-token data verification remains a post-deploy check because the local sandbox cannot reach the external provider during this run.
 
 ### Product/data backlog retained after the visual phase
 

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { DesktopShell, WindowPanel } from "../desktop-shell";
 
 export const metadata: Metadata = { title: "Methodology — WHOAPED", description: "How WHOAPED verifies Pump and Fomo identities, positions, thesis evidence, and daily performance.", alternates: { canonical: "/methodology" } };
 
@@ -13,5 +14,5 @@ const methods = [
 ] as const;
 
 export default function MethodologyPage() {
-  return <main className="product-shell"><nav className="app-nav"><Link className="wordmark" href="/">WHOAPED<span>•</span></Link><div><Link href="/">TOKENS</Link><Link href="/leaderboard">LEADERBOARD</Link><Link className="active" href="/methodology">METHOD</Link></div><span className="live-state"><i />SOLANA LIVE</span></nav><section className="page-intro"><span className="kicker">EVIDENCE BEFORE SIGNAL</span><h1>What every WHOAPED<br />number actually means.</h1><p>Pump and Fomo live in one product, but their source windows are never silently mixed.</p></section><section className="method-grid">{methods.map(([title, detail], index) => <article className="terminal-panel" key={title}><span className="kicker">0{index + 1}</span><h2>{title}</h2><p>{detail}</p></article>)}</section><section className="method-cta terminal-panel"><div><span className="kicker">READY TO VERIFY</span><h2>Start with the token, then inspect the trader.</h2></div><div><Link href="/">SCAN A TOKEN ↗</Link><Link href="/leaderboard">OPEN DAILY BOARD ↗</Link></div></section></main>;
+  return <DesktopShell active="method"><div className="workspace-stack"><section className="workspace-heading"><div><span className="kicker">EVIDENCE BEFORE SIGNAL</span><h1>What every number actually means.</h1><p>Pump and Fomo live in one product, but their source windows are never silently mixed.</p></div></section><section className="method-grid">{methods.map(([title, detail], index) => <WindowPanel title={`0${index + 1} · ${title}`} key={title}><p>{detail}</p></WindowPanel>)}</section><WindowPanel title="Ready to verify" className="method-cta"><h2>Start with the token, then inspect the trader.</h2><div><Link className="win-button primary" href="/">SCAN A TOKEN ↗</Link><Link className="win-button" href="/leaderboard">OPEN DAILY BOARD ↗</Link></div></WindowPanel></div></DesktopShell>;
 }

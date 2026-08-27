@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import "./discovery.css";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://whoaped-phi.vercel.app"),
