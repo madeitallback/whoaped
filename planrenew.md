@@ -1728,3 +1728,15 @@ The agent must not say “done” if a required migration is unapplied, producti
 - Added a combined chronological token timeline for verified buys and attributable Pump/Fomo thesis evidence.
 - Provider cost control: Birdeye is revalidated every 45 seconds; FomoScan thesis refresh is at most once per persisted token per 15 minutes. Wallet identity lookup remains scoped to the measured token cohort.
 - Remaining platform-depth work: verified sell decoding/position reconciliation, a complete Fomo follower graph, and broader long-history identity coverage.
+
+Phase completed: Trending discovery and automatic Fomo token-thesis vertical.
+Files changed: homepage discovery UI, token workspace timeline, Birdeye/Fomo adapters and routes, repository persistence, Supabase gateway allowlist, migration 011, tests, environment template.
+Database migrations applied: `011_fomoscan_thesis_ingestion.sql` on Supabase project `afhbwkpqxxtvqcjfcktg`; `whoaped-data` Edge Function deployed as version 3.
+Metric/API versions introduced: `/api/tokens/trending`; FomoScan thesis cache/provider-state contract on `/api/token/thesis`.
+Tests run and results: 40/40 Vitest tests pass; TypeScript passes; `next build` passes with 19 generated routes; `git diff --check` passes.
+Production verification: `/api/health` reports Solana RPC reachable and Supabase ready; `/api/tokens/trending` returned live Birdeye Solana results; a production Fomo thesis refresh completed successfully with an honest empty result for the sampled token.
+Known partial-data behavior: missing theses remain explicit and do not erase verified holder or on-chain evidence; upstream discovery errors return controlled responses.
+Provider cost/performance impact: Birdeye cache 45 seconds; persisted Fomo thesis cache 15 minutes; one bounded Fomo request per stale token.
+Remaining blocker: no blocker for this vertical. The three platform-depth items above remain later phases.
+Exact next phase: verified sell/position reconciliation, then complete Fomo follower collection and extension-based coverage.
+Commit/deployment identifiers: Git commit `381ee1b92ce0b0ae5c2ac337753bd0c3068f47ef`; Vercel deployment `dpl_H17fEeku5a3GY6By3D5a9LN2g1Cp` (`READY`).
