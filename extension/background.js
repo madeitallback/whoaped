@@ -6,7 +6,7 @@ async function endpoint() {
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (!["whoaped:follower-edge", "whoaped:fomo-follower-edge", "whoaped:fomo-followers", "whoaped:analyze", "whoaped:watch", "whoaped:capture-thesis", "whoheld:follower-edge", "whoheld:analyze", "whoheld:watch", "follower-alpha:analyze", "follower-alpha:watch"].includes(message?.type)) return;
+  if (!["whoaped:follower-edge", "whoaped:fomo-follower-edge", "whoaped:fomo-followers", "whoaped:fomo-token-holders", "whoaped:analyze", "whoaped:watch", "whoaped:capture-thesis", "whoheld:follower-edge", "whoheld:analyze", "whoheld:watch", "follower-alpha:analyze", "follower-alpha:watch"].includes(message?.type)) return;
   void (async () => {
     try {
       const base = await endpoint();
@@ -33,6 +33,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         const response = await fetch(`${base}/api/token/thesis`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(message.evidence) });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "WHOAPED could not capture this thesis.");
+        sendResponse({ ok: true, data, endpoint: base });
+        return;
+      }
+      if (message.type === "whoaped:fomo-token-holders") {
+        const response = await fetch(`${base}/api/platforms/fomo/token-holders`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mint: message.mint, sourceUrl: message.sourceUrl, holders: message.holders }) });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "WHOAPED could not link the visible Fomo holders.");
         sendResponse({ ok: true, data, endpoint: base });
         return;
       }

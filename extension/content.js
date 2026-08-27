@@ -67,8 +67,62 @@
     const url = new URL(window.location.href);
     const queryCandidates = [url.searchParams.get("mint"), url.searchParams.get("token"), url.searchParams.get("address")];
     const segments = url.pathname.split("/").filter(Boolean);
-    const routeCandidates = segments.some((segment) => /^(coin|token)$/i.test(segment)) ? segments : [];
+    const routeCandidates = segments;
     return [...queryCandidates, ...routeCandidates].find((candidate) => candidate && base58.test(candidate)) || null;
+  }
+
+  function parseMoney(text) {
+    const value = Number(String(text || "").replace(/[$,+%]/g, "").replace(/,/g, ""));
+    return Number.isFinite(value) ? value : null;
+  }
+
+  function visibleFomoTokenHolders() {
+    if (!isFomo || !tokenMintFromUrl()) return [];
+    const holders = new Map();
+    for (const element of document.querySelectorAll("button, article, li")) {
+      const box = element.getBoundingClientRect();
+      if (!box.width || !box.height || box.bottom < 0 || box.top > window.innerHeight) continue;
+      const lines = (element.innerText || "").split("\n").map((line) => line.trim()).filter(Boolean);
+      const amountLine = lines.find((line) => /^[\d,.]+(?:\.\d+)?[KMB]?\s+[A-Za-z][A-Za-z0-9._-]{0,15}$/i.test(line));
+      const profileLink = element.querySelector?.('a[href*="/profile/"]');
+      const linkedHandle = profileLink?.getAttribute("href")?.match(/\/profile\/([^/?#]+)/)?.[1];
+      const handle = linkedHandle ? decodeURIComponent(linkedHandle) : lines[0]?.replace(/^@/, "");
+      if (!amountLine || !handle || base58.test(handle) || handle.length > 128) continue;
+      const moneyLines = lines.filter((line) => /^[+-]?\$[\d,.]+(?:\.\d+)?$/.test(line));
+      const roiLine = lines.find((line) => /^[+-]?[\d,.]+(?:\.\d+)?%$/.test(line));
+      holders.set(handle.toLowerCase(), {
+        handle,
+        amountText: amountLine.split(/\s+/)[0],
+        holdTimeText: lines.find((line) => /avg\.?\s*hold|hold time|external wallet/i.test(line)) || null,
+        valueUsd: parseMoney(moneyLines[0]),
+        pnlUsd: parseMoney(moneyLines[1]),
+        roiPct: parseMoney(roiLine),
+      });
+    }
+    return [...holders.values()].slice(0, 100);
+  }
+
+  function mountFomoTokenHolderSync() {
+    const mint = tokenMintFromUrl();
+    if (!isFomo || !mint || document.querySelector("#whoaped-holder-sync")) return;
+    const root = document.createElement("aside");
+    root.id = "whoaped-holder-sync";
+    root.innerHTML = `<b>WHOAPED HOLDER MAP</b><span>Link visible Fomo profiles to their verified Solana balances.</span><button type="button">SYNC VISIBLE HOLDERS ↗</button><small>Only visible holder rows are sent after your click. No cookies or session data.</small>`;
+    root.querySelector("button").addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      const holders = visibleFomoTokenHolders();
+      if (!holders.length) {
+        button.textContent = "SCROLL TO HOLDERS, THEN RETRY";
+        setTimeout(() => { button.textContent = "SYNC VISIBLE HOLDERS ↗"; }, 3500);
+        return;
+      }
+      button.disabled = true;
+      button.textContent = `LINKING ${holders.length} VISIBLE HOLDERS…`;
+      const result = await chrome.runtime.sendMessage({ type: "whoaped:fomo-token-holders", mint, sourceUrl: window.location.href, holders });
+      button.disabled = false;
+      button.textContent = result?.ok ? `✓ ${result.data.linked} LINKED · ${result.data.unresolved} PENDING` : result?.error || "RETRY SYNC";
+    });
+    document.documentElement.append(root);
   }
 
   function selectedThesisEvidence() {
@@ -315,7 +369,7 @@
 
   let attempts = 0;
   const waitForProfile = () => {
-    void mountProfileEmbed(); mountLeaderboardImporter();
+    void mountProfileEmbed(); mountLeaderboardImporter(); mountFomoTokenHolderSync();
     attempts += 1;
     if (!document.querySelector("#follower-alpha-inline") && attempts < 15) setTimeout(waitForProfile, 600);
   };

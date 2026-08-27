@@ -7,6 +7,7 @@ import type { PlatformFollowerRecord, PlatformProfileRecord } from "../platforms
 import type { FollowerEdgeMetrics } from "../follower-edge";
 import type { FomoTokenThesis } from "../token-intel/fomo-theses";
 import { positionStatus } from "../token-intel/activity";
+import type { ResolvedFomoHolderCapture } from "../token-intel/fomo-holder-capture";
 import { isSupabaseConfigured, supabaseRequest } from "./supabase";
 
 export type ClaimedJob = {
@@ -144,7 +145,7 @@ type ActivityEventRow = { signature: string; wallet: string; venue: TokenTradeAc
 export async function readTokenActivity(mint: string) {
   if (!isSupabaseConfigured()) return { positions: [] as TokenWalletActivity[], events: [] as TokenTradeActivityEvent[] };
   const [positionResponse, eventResponse] = await Promise.all([
-    supabaseRequest(`token_positions?mint=eq.${encodeURIComponent(mint)}&or=(buy_tx_count.gt.0,sell_tx_count.gt.0)&select=wallet,balance_ui,pct_of_supply,first_buy_at,last_buy_at,last_sell_at,buy_tx_count,sell_tx_count,observed_at&order=buy_tx_count.desc&limit=500`),
+    supabaseRequest(`token_positions?mint=eq.${encodeURIComponent(mint)}&or=(balance_ui.gt.0,buy_tx_count.gt.0,sell_tx_count.gt.0)&select=wallet,balance_ui,pct_of_supply,first_buy_at,last_buy_at,last_sell_at,buy_tx_count,sell_tx_count,observed_at&order=balance_ui.desc&limit=2000`),
     supabaseRequest(`token_trade_events?mint=eq.${encodeURIComponent(mint)}&select=signature,wallet,venue,phase,side,quantity_raw,occurred_at&order=occurred_at.desc.nullslast&limit=200`),
   ]);
   const rows = await positionResponse.json() as ActivityPositionRow[];
@@ -157,6 +158,34 @@ export async function readTokenActivity(mint: string) {
     }),
     events: eventRows.map((row) => ({ signature: row.signature, wallet: row.wallet, venue: row.venue, phase: row.phase, side: row.side, quantityRaw: row.quantity_raw, occurredAt: row.occurred_at })),
   };
+}
+
+export async function persistFomoHolderCaptures(mint: string, sourceUrl: string, captures: ResolvedFomoHolderCapture[]) {
+  if (!isSupabaseConfigured() || !captures.length) return 0;
+  const observedAt = new Date().toISOString();
+  const response = await supabaseRequest("rpc/capture_fomo_token_holder_batch", {
+    method: "POST",
+    body: JSON.stringify({
+      capture_mint: mint,
+      capture_source_url: sourceUrl,
+      capture_observed_at: observedAt,
+      capture_items: captures.map((capture) => ({
+        handle: capture.handle,
+        normalized_handle: capture.normalizedHandle,
+        amount_text: capture.amountText,
+        amount_low_ui: capture.amountLowUi,
+        amount_high_ui: capture.amountHighUi,
+        hold_time_text: capture.holdTimeText ?? null,
+        value_usd: capture.valueUsd ?? null,
+        pnl_usd: capture.pnlUsd ?? null,
+        roi_pct: capture.roiPct ?? null,
+        wallet: capture.wallet,
+        confidence: capture.confidence,
+        resolution_method: capture.resolutionMethod,
+      })),
+    }),
+  });
+  return Number(await response.json());
 }
 
 export async function persistFomoIdentities(mint: string, identities: Map<string, FomoIdentity>, holderWallets: Set<string>, buyerWallets: Set<string>) {

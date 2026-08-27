@@ -1929,3 +1929,21 @@ Authorization boundary: this research was performed in the contest account after
 - [ ] Run unit, fixture, migration, build, and end-to-end tests; deploy only after zero hardcoded-profile assumptions remain.
 
 Research status: feasibility proven for one real Solana profile with four independently matching transactions. Implementation is not yet complete, and the result must not be described as production-ready until the generic resolver, persistence, validation cohort, and deployment checks above pass.
+
+## 33. Completion record — unified Pump + Fomo token holders (2026-08-27)
+
+- [x] Correct the token model to one on-chain position row per wallet. Pump and Fomo are profile sources attached to that wallet, not separate holder rows and not an artificial `BOTH` category.
+- [x] Include every indexed positive token balance in `/api/token/activity`; wallets no longer disappear merely because Pump curve/PumpSwap trade decoding has not reached them yet.
+- [x] Merge the full indexed holder snapshot with the immediate live scan, sort by current token balance, retain unidentified wallets, and deduplicate profiles by platform/profile ID.
+- [x] Rebuild the primary token cockpit around `profiles → wallet → token amount/USD value/% supply → position evidence`. A wallet linked on both platforms shows both profile links in the same row.
+- [x] Change Pump/Fomo filters to mean “holders with a profile on this platform”; `ALL HOLDERS` remains the complete on-chain list, including unresolved identities.
+- [x] Add a generic visible Fomo holder-capture contract with compact-balance rounding intervals, strict 1% maximum display granularity, unique-candidate matching, ambiguity rejection, and no hardcoded handle or wallet.
+- [x] Add explicit Companion collection on Fomo Solana token pages. Data is sent only after `SYNC VISIBLE HOLDERS`; no cookie, local-storage value, hidden DOM, or session credential is read.
+- [x] Add `POST /api/platforms/fomo/token-holders`, server validation for Fomo source URL/mint, bounded 100-row input, current-snapshot matching, and atomic persistence.
+- [x] Add service-only `fomo_token_holder_observations` plus `capture_fomo_token_holder_batch`. RLS is enabled, `anon`/`authenticated` have no access, and only `service_role` can execute capture.
+- [x] Apply migration `20260827090000_fomo_token_holder_capture.sql` to `afhbwkpqxxtvqcjfcktg` and deploy `whoaped-data` Edge Function version 6 with the new resource/RPC allowlist.
+- [x] Bump WHOAPED Companion to `0.10.0` and fix mint extraction for Fomo's `/tokens/solana/{mint}` route.
+
+Verification before deployment: 60/60 Vitest tests pass, including one-wallet/two-profile deduplication, unidentified-holder retention, amount-interval parsing, unique resolution, ambiguous rejection, and coarse-rounded rejection. TypeScript, `git diff --check`, and the 28-route Next.js production build pass. Supabase verification confirms the table exists, `anon_can_select=false`, `authenticated_can_select=false`, and `service_can_capture=true`. Advisor INFO notices remain intentional for service-only RLS tables; no public policy was added.
+
+Honest coverage boundary: the live token page always shows on-chain holders. Pump profiles resolve from the public wallet profile contract. Fomo profiles appear when already persisted through FomoScan or after an authorized visible-page capture can uniquely match a sufficiently precise displayed balance. Ambiguous/coarsely rounded captures remain unresolved instead of being guessed. Repeated transaction-time evidence remains the next confidence upgrade for observations that cannot be uniquely resolved from the current balance fingerprint.
