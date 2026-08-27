@@ -32,7 +32,7 @@ export async function hasFreshPumpDailyProfiles(now = Date.now()) {
 async function executeRefresh(force: boolean): Promise<PumpRefreshResult> {
   if (!force && await hasFreshPumpDailyProfiles()) return { refreshed: false, profiles: 0, wallets: 0, reason: "fresh" };
   const directory = await fetchPumpDirectory(PUMP_DAILY_BATCH_SIZE);
-  const summaries = await fetchDuneWalletSummaries(directory.map((profile) => profile.wallet), 90, 42_000);
+  const summaries = await fetchDuneWalletSummaries(directory.map((profile) => profile.wallet), 90, 240_000);
   const summaryByWallet = new Map(summaries.map((summary) => [summary.address, summary]));
   const updatedAt = Date.now();
   const profiles = directory.flatMap((profile) => { const summary = summaryByWallet.get(profile.wallet); return summary ? [pumpSummaryProfile(profile, summary, updatedAt)] : []; });

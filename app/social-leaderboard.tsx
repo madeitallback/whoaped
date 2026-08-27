@@ -22,7 +22,7 @@ export function SocialLeaderboard({ preview = false }: { preview?: boolean }) {
       const body = await response.json() as Payload & { error?: string };
       if (!response.ok) throw new Error(body.error || "Leaderboard unavailable.");
       setPayload(body);
-      if (body.sources?.pump?.includes("refreshing") && !retried) { retried = true; retry = setTimeout(load, 12_000); }
+      if (body.sources?.pump?.includes("refreshing") && !retried) { retried = true; retry = setTimeout(load, 75_000); }
     }).catch((cause) => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Leaderboard unavailable."); }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     void load();
     return () => { controller.abort(); if (retry) clearTimeout(retry); };

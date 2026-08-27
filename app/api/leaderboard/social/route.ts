@@ -4,6 +4,7 @@ import { after } from "next/server";
 import { PUMP_REFRESH_TTL_MS, refreshPumpLeaderboard } from "@/lib/pump-leaderboard-refresh";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 export async function GET() {
   const [profiles, fomo] = await Promise.all([

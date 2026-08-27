@@ -1,7 +1,7 @@
 import { refreshPumpLeaderboard } from "@/lib/pump-leaderboard-refresh";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export async function GET(request: Request) {
   const authorization = request.headers.get("authorization");
