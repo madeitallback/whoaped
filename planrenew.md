@@ -1755,6 +1755,6 @@ Commit/deployment identifiers: Git commit `381ee1b92ce0b0ae5c2ac337753bd0c3068f4
 - Migration `20260827065611_token_trade_reconciliation.sql` applied to Supabase project `afhbwkpqxxtvqcjfcktg`; 71 previous buys migrated and a 17-wallet reconciliation sample executed successfully.
 - `whoaped-data` Edge Function version 4 is active. `anon` and `authenticated` have no table or RPC access; only `service_role` can read/write/reconcile.
 - Supabase advisors report no warning/error findings. The INFO-only RLS-without-policy notices are intentional for service-only tables, and the new-index notices are expected before production traffic accumulates.
-- Verification: 46/46 tests pass and TypeScript passes. Production build and smoke verification are the release gate for this phase.
+- Verification: 46/46 tests pass, TypeScript and the 20-route production build pass. Production commit `f58c97308c7a62fe7eda3c47c8c342597d49455d` deployed as `dpl_Hy3qTXk5Fwmv4Q3WtCsRPmvvxTQz` (`READY`). A live Fartcoin re-index returned 41 reconciled wallets and the 200-event API window contained 126 verified sells, producing 22 `EXITED` states while 19 unproven exits remained correctly labeled `NOT_HELD`.
 
 Remaining platform-depth work after this phase: complete Fomo follower collection and broader long-history social identity coverage.
