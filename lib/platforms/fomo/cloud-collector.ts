@@ -20,6 +20,7 @@ const WINDOWS: Array<{ label: string; window: FomoCollectorWindow }> = [
 export async function collectFomoLeaderboards(storageState: FomoStorageState) {
   let browser: Browser | null = null;
   try {
+    chromiumBinary.setGraphicsMode = false;
     browser = await chromium.launch({
       args: chromiumBinary.args,
       executablePath: await chromiumBinary.executablePath(),
@@ -27,11 +28,17 @@ export async function collectFomoLeaderboards(storageState: FomoStorageState) {
     });
     const context = await browser.newContext({
       storageState: sanitizeFomoStorageState(storageState),
-      viewport: { width: 1440, height: 1100 },
+      viewport: { width: 1280, height: 900 },
       locale: "en-US",
+      serviceWorkers: "block",
+    });
+    await context.route("**/*", async (route) => {
+      const type = route.request().resourceType();
+      if (type === "image" || type === "font" || type === "media") return route.abort();
+      return route.continue();
     });
     const page = await context.newPage();
-    await page.goto("https://fomo.family/profile/frankdegods", { waitUntil: "domcontentloaded", timeout: 60_000 });
+    await page.goto("https://fomo.family/", { waitUntil: "domcontentloaded", timeout: 60_000 });
 
     const leaderboardButton = page.getByRole("button", { name: "Leaderboard", exact: true });
     await leaderboardButton.waitFor({ state: "visible", timeout: 45_000 }).catch(() => {
