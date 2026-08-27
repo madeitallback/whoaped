@@ -1880,3 +1880,52 @@ Production verification: functional commit `320e263e8249579122712801d56c5fb6cb92
 Final launch resilience finding: repeated production probes triggered a transient FomoScan failure and briefly removed the Fomo lane. The board now uses Vercel's 60-second provider cache, a 30-second shared response cache with five-minute stale revalidation, and a bounded 15-minute in-process last-valid fallback. A fallback is labeled `cached`, never `live`; Pump stays available if no valid Fomo capture exists.
 
 External launch blocker found after the fallback deployment: a direct provider diagnostic returned FomoScan `402 QUOTA_EXCEEDED` with `monthly unit quota exhausted`. This is not an integration, credential, Supabase, or deployment failure. Production commit `ac722d5a94536e3a9cdc94a90d634ab4a75ca98f` is `READY` as `dpl_FfXVXLdjY9j5PBwuTWyDa4zUTUxT`; Pump remains `daily_live` with 23 rows and 20 v2 automatic profiles, while Fomo correctly reports `degraded` rather than presenting stale data as live. Renewing/upgrading the same FomoScan key or supplying a funded replacement restores the Fomo lane without a code change. Once one valid response arrives, the new cache protects it against short provider blips.
+
+## 32. Research record — first-party Fomo reconstruction without FomoScan (2026-08-27)
+
+Authorization boundary: this research was performed in the contest account after the user stated that the Fomo founder authorized the competition and the investigation. The audit stayed read-only: no trade, deposit, withdrawal, wallet secret, browser cookie, local storage, session token, or authorization header was read or modified.
+
+### Confirmed visible contracts
+
+- The authenticated 24H/7D/30D/ALL leaderboard is structured DOM, not an image. A 24-hour capture exposed at least 150 profile paths with rank, canonical handle, realized PnL, clan metadata, and an additional compact count. Values changed on refresh, confirming a live surface.
+- An authenticated Fomo profile exposes following/follower counts, average hold, trade count, rolling PnL windows, open/closed positions, per-token entry/PnL, thesis history, and timestamped buy/sell history. The ordinary visible profile does not expose a wallet or transaction signature.
+- A Solana token page exposes the token mint, launchpad/network, holder handle, current token quantity/value, average hold, PnL/ROI, average entry market cap, thesis text, and profile link. The position dialog adds timestamped buy/sell rows and thesis history.
+- `Received from external wallet` and `No hold time` are explicit source states. They must remain distinct from measured Fomo buys and must never be forced into a fabricated hold duration.
+
+### Reproducible identity proof
+
+- Test subject: the visible `lizzerd` position on Solana token `fone` (`CTPoyCwkjMvoJwU4xvZZqoD8tiYk6yDchySiN5gGpump`).
+- Fomo displayed four buys of `$4,997.75` at 20:14–20:15 Toronto time and a current rounded position of `11.3M` tokens.
+- Helius `getTokenLargestAccounts` found the matching `11.396997M` SPL account. `getAccountInfo` resolved its public owner wallet.
+- Helius `getTransactionsForAddress`, filtered by that wallet, mint, and four-minute window, returned exactly four successful transactions at 20:14:58, 20:15:02, 20:15:06, and 20:15:10. Every transaction had the same user signer plus the sponsored fee signer and contained Fomo's distinctive `jitodontfront...TradeonFomo` route marker.
+- Result: one Fomo handle-to-wallet mapping was independently verified without FomoScan. This is a validation sample, not permission to hardcode the handle or wallet. Production resolution must apply the same evidence rules to every candidate.
+
+### Generic production algorithm
+
+1. Capture a first-party Fomo observation with `platform`, `handle`, `mint`, displayed token amount/value, position state, average hold, entry market cap, thesis text, transaction side/amount/time, source state, and `captured_at`.
+2. Query current SPL accounts for the mint and generate balance candidates from the displayed rounded quantity. Preserve the rounding interval instead of comparing formatted strings.
+3. Resolve each candidate token account to its owner wallet with parsed Solana account data.
+4. For every candidate owner, query only the narrow timestamp windows around the visible Fomo transactions, filtered by mint and success status.
+5. Require repeated agreement across independent evidence: matching number/order/side/time of events, candidate token-account balance, user signer, and the Fomo route marker. A single rounded balance match is insufficient.
+6. Score resolution confidence and accept only deterministic/high-confidence mappings. Store evidence references, timestamps, and resolver version; return `unresolved` when ambiguous.
+7. Once a handle is resolved, calculate win rate, realized PnL, weighted return, median/profit-weighted hold, active-30d status, baghold rate, and frontrun relations from public on-chain history. Do not keep paying for those derived metrics through FomoScan.
+8. Continue capturing leaderboard and thesis/position observations because those social labels are first-party Fomo data and cannot be inferred from Solana alone.
+
+### Recommended architecture change
+
+- Keep FomoScan as an optional compatibility/fallback provider, not the canonical dependency.
+- Add a versioned `fomo_observations` ingestion contract and a separate `fomo_identity_evidence` resolver table. Raw observations remain append-only; canonical profile-wallet links are promoted only after the resolver threshold passes.
+- Add a bounded resolver worker: one mint snapshot, narrow Helius windows, candidate cap, deterministic retries, and explicit provider-cost telemetry. Never scan the entire mint transaction history when a balance/time fingerprint can reduce the search space.
+- Populate the mixed daily board from captured first-party leaderboard rows plus WHOAPED's own verified on-chain metrics. Label Fomo's visible rolling PnL separately from WHOAPED-derived wallet performance.
+- Populate token holders and theses directly from first-party observations, then enrich resolved profiles with on-chain state. Preserve `external transfer`, `no hold time`, `unresolved`, `stale`, and `partial` states in the API and UI.
+
+### Next implementation phase
+
+- [ ] Define the observation/evidence database migration and strict server contracts.
+- [ ] Reuse the existing user-triggered visible-DOM privacy boundary for leaderboard, token-holder, position, thesis, and follower captures; do not read browser credentials.
+- [ ] Implement and test the generic Solana handle resolver with rounding intervals, timestamp tolerances, repeated-event matching, and ambiguity rejection.
+- [ ] Backfill a small validation cohort across multiple tokens/profiles and measure precision before promoting any mapping.
+- [ ] Replace the FomoScan-only leaderboard/thesis failure path with first-party persisted observations and show freshness/coverage.
+- [ ] Run unit, fixture, migration, build, and end-to-end tests; deploy only after zero hardcoded-profile assumptions remain.
+
+Research status: feasibility proven for one real Solana profile with four independently matching transactions. Implementation is not yet complete, and the result must not be described as production-ready until the generic resolver, persistence, validation cohort, and deployment checks above pass.
