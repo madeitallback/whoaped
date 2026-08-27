@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-export const metadata: Metadata = { title: "Methodology — WHOAPED", description: "How WHOAPED verifies Pump and Fomo identities, positions, thesis evidence, and daily performance." };
+export const metadata: Metadata = { title: "Methodology — WHOAPED", description: "How WHOAPED verifies Pump and Fomo identities, positions, thesis evidence, and daily performance.", alternates: { canonical: "/methodology" } };
 
 const methods = [
   ["Fomo daily board", "Official FomoScan rolling 24-hour realized PnL, trades, and volume. These are source metrics, not reconstructed by WHOAPED."],
