@@ -193,6 +193,65 @@
     window.dispatchEvent(new Event("resize"));
   }
 
+  function visibleFomoFollowerHandles(ownerHandle) {
+    const scope = document.querySelector('[role="dialog"], [aria-modal="true"]');
+    if (!scope) return [];
+    const handles = new Map();
+    for (const anchor of scope.querySelectorAll('a[href*="/profile/"]')) {
+      const box = anchor.getBoundingClientRect();
+      if (!box.width || !box.height || box.bottom < 0 || box.top > window.innerHeight) continue;
+      const match = anchor.getAttribute("href")?.match(/\/profile\/([^/?#]+)/);
+      if (!match) continue;
+      const handle = decodeURIComponent(match[1]).replace(/^@/, "");
+      if (!handle || handle.toLowerCase() === ownerHandle.toLowerCase() || base58.test(handle)) continue;
+      handles.set(handle.toLowerCase(), handle);
+    }
+    return [...handles.values()];
+  }
+
+  function visibleFomoFollowerCount() {
+    const text = document.body.innerText;
+    const match = text.match(/([\d,.]+)\s+followers?/i) || text.match(/followers?\s*([\d,.]+)/i);
+    if (!match) return null;
+    const count = Number(match[1].replace(/,/g, ""));
+    return Number.isFinite(count) ? count : null;
+  }
+
+  function renderFomoCollector(card, handle, cached, endpoint) {
+    const ready = cached?.status === "ready" || cached?.status === "insufficient";
+    const edge = typeof cached?.followerEdge === "number" ? `${(cached.followerEdge * 100).toFixed(1)}%` : "—";
+    card.innerHTML = `<div class="fa-inline-head"><span class="fa-inline-mark">↗</span><span>WHOAPED</span><span class="fa-inline-live">FOMO</span><button class="fa-inline-close" type="button" aria-label="Close WHOAPED">×</button></div>${ready ? `<div class="fa-inline-main"><div class="fa-inline-score"><b>${edge}</b><span>FOLLOWER EDGE</span></div><div class="fa-inline-stat"><span>PROFITABLE / SCORABLE</span><b>${cached.profitableFollowers} / ${cached.scorableFollowers}</b></div><div class="fa-inline-stat"><span>ACTIVE 30D</span><b>${cached.activeFollowers30d} / ${cached.sampledFollowers}</b></div><div class="fa-inline-stat"><span>CONFIDENCE</span><b>${String(cached.confidence).toUpperCase()}</b></div></div>` : `<p class="fa-inline-message">Open this profile's <b>Followers</b> list. WHOAPED reads only the visible profile links after your click—never cookies or session tokens.</p>`}<div class="fa-fomo-actions"><button type="button" class="fa-collect-followers">ANALYZE VISIBLE FOLLOWERS ↗</button><span>FomoScan identity → Dune realized history</span></div><div class="fa-inline-foot"><span>${ready ? `● saved snapshot · ${cached.sampledFollowers} wallets sampled` : "○ explicit collection required"}</span><a href="${endpoint}/?source=fomo&handle=${encodeURIComponent(handle)}&followerPlatform=fomo&followerHandle=${encodeURIComponent(handle)}" target="_blank" rel="noreferrer">DETAILS ↗</a></div>`;
+    bindClose(card);
+    card.querySelector(".fa-collect-followers")?.addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      const followers = visibleFomoFollowerHandles(handle);
+      if (!followers.length) {
+        button.textContent = "OPEN FOLLOWERS, THEN RETRY";
+        setTimeout(() => { button.textContent = "ANALYZE VISIBLE FOLLOWERS ↗"; }, 3500);
+        return;
+      }
+      button.disabled = true;
+      button.textContent = `RESOLVING ${followers.length} VISIBLE PROFILES…`;
+      const result = await chrome.runtime.sendMessage({ type: "whoaped:fomo-followers", handle, followers, visibleFollowerCount: visibleFomoFollowerCount() });
+      if (!result?.ok) {
+        button.disabled = false;
+        button.textContent = result?.error || "RETRY COLLECTION";
+        return;
+      }
+      renderFomoCollector(card, handle, result.data, result.endpoint);
+    });
+    window.dispatchEvent(new Event("resize"));
+  }
+
+  async function mountFomoFollowerEdge(handle) {
+    const anchor = profileAnchor();
+    if (!anchor) return false;
+    const card = mountInline(anchor);
+    const result = await chrome.runtime.sendMessage({ type: "whoaped:fomo-follower-edge", handle });
+    renderFomoCollector(card, handle, result?.ok ? result.data : null, result?.endpoint || "https://whoaped-phi.vercel.app");
+    return true;
+  }
+
   async function analyzeFollowerEdge(wallet) {
     const anchor = profileAnchor();
     if (!anchor) return false;
@@ -227,10 +286,8 @@
       if (wallet) { await analyzeFollowerEdge(wallet); return; }
     }
     if (isFomo) {
-      const wallet = fomoWalletFromPublicLinks();
-      if (wallet) { await analyzeProfile(wallet, "fomo", identity); return; }
-      const anchor = profileAnchor();
-      if (anchor) renderUnavailable(mountInline(anchor), `No public Solana wallet is linked on this Fomo profile. <a href="https://fomowalletfinder.com/?handle=${encodeURIComponent(identity)}" target="_blank" rel="noreferrer">Resolve on Fomo Wallet Finder ↗</a>`);
+      await mountFomoFollowerEdge(identity);
+      return;
     }
   }
 

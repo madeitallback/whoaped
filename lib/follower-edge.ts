@@ -1,6 +1,8 @@
 import type { DuneWalletSummary } from "./dune";
+import type { Platform } from "./platforms/types";
 
 export interface FollowerEdgeMetrics {
+  platform: Platform;
   metricVersion: "follower-v1-sample";
   windowDays: 90;
   visibleFollowers: number;
@@ -15,8 +17,8 @@ export interface FollowerEdgeMetrics {
   sampleCoverage: number | null;
   dataCompleteness: number;
   confidence: "low" | "medium" | "high";
-  status: "ready" | "insufficient" | "unavailable";
-  sampleStrategy: "rank-stratified-public-sample";
+  status: "ready" | "insufficient" | "unavailable" | "collection_required";
+  sampleStrategy: "rank-stratified-public-sample" | "user-triggered-visible-dom";
   calculatedAt: number;
   notices: string[];
 }
@@ -40,7 +42,10 @@ export function calculateFollowerEdge(
   summaries: DuneWalletSummary[],
   population: { visibleFollowers: number; accessibleFollowers: number; sampledFollowers: number },
   now = Date.now(),
+  context: { platform?: Platform; sampleStrategy?: FollowerEdgeMetrics["sampleStrategy"] } = {},
 ): FollowerEdgeMetrics {
+  const platform = context.platform ?? "pump";
+  const sampleStrategy = context.sampleStrategy ?? "rank-stratified-public-sample";
   const active = summaries.filter((summary) => (numberOrNull(summary.swaps_30d) ?? 0) >= 1);
   const scorable = active.filter((summary) =>
     (numberOrNull(summary.closed_positions) ?? 0) >= 3
@@ -57,6 +62,7 @@ export function calculateFollowerEdge(
   const followerEdge = scorable.length ? profitable.length / scorable.length : null;
 
   return {
+    platform,
     metricVersion: "follower-v1-sample",
     windowDays: 90,
     visibleFollowers: population.visibleFollowers,
@@ -72,18 +78,21 @@ export function calculateFollowerEdge(
     dataCompleteness,
     confidence,
     status: followerEdge === null ? "insufficient" : "ready",
-    sampleStrategy: "rank-stratified-public-sample",
+    sampleStrategy,
     calculatedAt: now,
     notices: [
       "Follower Edge is the share of active, scorable sampled followers with a positive 90-day capital-weighted realized return.",
       "Active means at least one verified swap in the last 30 days; scorable means at least three closed token positions.",
-      "This live beta uses a rank-stratified public Pump sample and always exposes its sample size and coverage.",
+      platform === "pump"
+        ? "This live beta uses a rank-stratified public Pump sample and always exposes its sample size and coverage."
+        : "This Fomo beta uses only followers visibly collected after an explicit Companion action and exposes its sample size and coverage.",
     ],
   };
 }
 
-export function unavailableFollowerEdge(visibleFollowers: number, now = Date.now()): FollowerEdgeMetrics {
+export function unavailableFollowerEdge(visibleFollowers: number, now = Date.now(), platform: Platform = "pump"): FollowerEdgeMetrics {
   return {
+    platform,
     metricVersion: "follower-v1-sample",
     windowDays: 90,
     visibleFollowers,
@@ -99,8 +108,19 @@ export function unavailableFollowerEdge(visibleFollowers: number, now = Date.now
     dataCompleteness: 0,
     confidence: "low",
     status: "unavailable",
-    sampleStrategy: "rank-stratified-public-sample",
+    sampleStrategy: platform === "pump" ? "rank-stratified-public-sample" : "user-triggered-visible-dom",
     calculatedAt: now,
-    notices: ["Pump reports a follower count for this profile but does not expose its public follower list."],
+    notices: [platform === "pump" ? "Pump reports a follower count for this profile but does not expose its public follower list." : "Open this profile's follower list on Fomo, then use WHOAPED Companion to analyze the visible followers."],
+  };
+}
+
+export function collectionRequiredFollowerEdge(handle: string, now = Date.now()): FollowerEdgeMetrics {
+  return {
+    ...unavailableFollowerEdge(0, now, "fomo"),
+    status: "collection_required",
+    notices: [
+      `No saved Fomo follower snapshot exists for @${handle}.`,
+      "Open Followers on this Fomo profile and click Analyze visible followers in WHOAPED Companion. Only visible profile links are collected; cookies and session tokens are never read.",
+    ],
   };
 }

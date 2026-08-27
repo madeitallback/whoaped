@@ -1,0 +1,1 @@
+.fa-fomo-actions{display:grid;gap:7px;margin-top:9px}.fa-fomo-actions button{padding:9px;color:#071008;background:var(--wa-lime);border:0;border-radius:7px;font:800 9px ui-monospace,Consolas,monospace;cursor:pointer}.fa-fomo-actions button:disabled{opacity:.65;cursor:wait}.fa-fomo-actions span{color:var(--wa-muted);font:8px ui-monospace,Consolas,monospace}

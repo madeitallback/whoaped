@@ -6,7 +6,7 @@ async function endpoint() {
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (!["whoaped:follower-edge", "whoaped:analyze", "whoaped:watch", "whoaped:capture-thesis", "whoheld:follower-edge", "whoheld:analyze", "whoheld:watch", "follower-alpha:analyze", "follower-alpha:watch"].includes(message?.type)) return;
+  if (!["whoaped:follower-edge", "whoaped:fomo-follower-edge", "whoaped:fomo-followers", "whoaped:analyze", "whoaped:watch", "whoaped:capture-thesis", "whoheld:follower-edge", "whoheld:analyze", "whoheld:watch", "follower-alpha:analyze", "follower-alpha:watch"].includes(message?.type)) return;
   void (async () => {
     try {
       const base = await endpoint();
@@ -14,6 +14,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         const response = await fetch(`${base}/api/platforms/pump/follower-edge?address=${encodeURIComponent(message.wallet)}&sample=20`);
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "WHOAPED could not calculate Follower Edge.");
+        sendResponse({ ok: true, data, endpoint: base });
+        return;
+      }
+      if (message.type === "whoaped:fomo-follower-edge" || message.type === "whoaped:fomo-followers") {
+        const collecting = message.type === "whoaped:fomo-followers";
+        const response = await fetch(`${base}/api/platforms/fomo/follower-edge${collecting ? "" : `?handle=${encodeURIComponent(message.handle)}`}`, collecting ? {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ handle: message.handle, followers: message.followers, visibleFollowerCount: message.visibleFollowerCount }),
+        } : undefined);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "WHOAPED could not calculate Fomo Follower Edge.");
         sendResponse({ ok: true, data, endpoint: base });
         return;
       }

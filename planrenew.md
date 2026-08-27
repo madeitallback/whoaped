@@ -1772,3 +1772,27 @@ Remaining platform-depth work after this phase: complete Fomo follower collectio
 - [x] Align the browser extension popup and injected card with the same visual hierarchy and evidence-first language; bump Companion to `0.8.0`.
 
 Product boundary retained: Pump Follower Edge is labeled as a Pump social signal. Fomo identities and FomoScan thesis evidence are live where verified, but WHOAPED does not claim a Fomo follower graph until that relationship source is implemented and validated.
+
+## 28. Completion record — Fomo Follower Edge vertical (2026-08-27)
+
+- [x] Confirm from Fomo's shipped client that follower relations are session-backed; direct unauthenticated requests are also intercepted by Cloudflare. WHOAPED therefore does not impersonate a Fomo session or read browser credentials.
+- [x] Add `lib/platforms/fomo/adapter.ts` using the documented FomoScan `/v2/user/handle/{handle}` contract. Stable Fomo user IDs are canonical; renamed handles are metadata, and only FomoScan-verified Solana wallets enter performance calculations.
+- [x] Add a user-triggered Companion workflow on every Fomo profile: the user opens Followers, clicks `ANALYZE VISIBLE FOLLOWERS`, and only currently visible `/profile/{handle}` links are collected. Cookies, local storage, Privy tokens, and hidden DOM are never read.
+- [x] Add `GET/POST /api/platforms/fomo/follower-edge`: GET reuses the latest persisted snapshot or returns `collection_required`; POST validates/deduplicates at most 100 visible handles, resolves them with bounded concurrency, and sends at most 40 verified wallets to one Dune batch.
+- [x] Reuse the exact Follower Edge definition across platforms: profitable scorable active followers / scorable active followers; active is at least one verified swap in 30 days; scorable is at least three closed positions with realized weighted return and win rate.
+- [x] Make platform and sampling method explicit in the metric contract. Pump remains `rank-stratified-public-sample`; Fomo is `user-triggered-visible-dom`. Missing data remains `null`/`collection_required`, never a fabricated zero.
+- [x] Add `social_followers` plus an atomic `capture_fomo_follower_snapshot` RPC. It upserts canonical profiles/wallet links, persists observed relations, and writes a versioned `signal_snapshots` row in the same transaction.
+- [x] Keep the new table service-only with RLS enabled, no anon/authenticated grants, a fixed function `search_path`, a targeted owner/time index, and server-only snapshot reads through the allowlisted Supabase gateway.
+- [x] Enable Fomo Follower Edge from analyzed Fomo profiles on the site, add Companion collection instructions for cold profiles, and render saved numerator, denominator, visible sample, completeness, and confidence with Fomo-specific language.
+- [x] Bump WHOAPED Companion to `0.9.0` and document the privacy boundary directly in the popup and injected Fomo card.
+- [x] Store `FOMOSCAN_API_KEY` in the gitignored local environment; `.env.local` remains covered by `.gitignore` and is not committed.
+
+Phase completed: Fomo follower collection, verified wallet resolution, calculation, persistence, website, and extension integration.
+Files changed: Fomo adapter/service/API, generic Follower Edge contract/tests, repository, site, Companion, Supabase migration/gateway, this plan.
+Database migrations applied: `012_fomo_follower_edge.sql` and `013_fomo_followers_reverse_index.sql` on `afhbwkpqxxtvqcjfcktg`; `whoaped-data` Edge Function version 5 active.
+Metric/API versions introduced: existing `follower-v1-sample`, now platform-tagged; `/api/platforms/fomo/follower-edge` GET/POST.
+Tests run and results: 50/50 Vitest tests pass; extension scripts pass syntax checks; Next production build passes with 21 routes.
+Known partial-data behavior: a cold Fomo profile returns `collection_required`; unresolved or walletless followers remain coverage evidence but never enter the performance denominator.
+Provider cost/performance impact: at most 100 FomoScan resolutions and 40 wallets in one Dune batch per explicit collection; persisted snapshots prevent repeat work on ordinary reads.
+Remaining blocker: final production deployment and an authenticated, user-triggered Fomo UI capture smoke test.
+Exact next phase: deploy, open a real Fomo follower modal with Companion, capture a snapshot, reload it from WHOAPED, then expand historical identity coverage.

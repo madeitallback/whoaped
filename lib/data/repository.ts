@@ -3,7 +3,8 @@ import type { VerifiedTradeEvent } from "../token-intel/buyers";
 import type { FomoIdentity } from "../token-intel/types";
 import type { TokenSocialActor, TokenThesisEvidence, TokenTradeActivityEvent, TokenWalletActivity } from "./contracts";
 import type { ThesisCaptureInput } from "../thesis-evidence";
-import type { PlatformProfileRecord } from "../platforms/types";
+import type { PlatformFollowerRecord, PlatformProfileRecord } from "../platforms/types";
+import type { FollowerEdgeMetrics } from "../follower-edge";
 import type { FomoTokenThesis } from "../token-intel/fomo-theses";
 import { positionStatus } from "../token-intel/activity";
 import { isSupabaseConfigured, supabaseRequest } from "./supabase";
@@ -196,6 +197,39 @@ export async function persistPumpIdentities(mint: string, profiles: Map<string, 
   }));
   await supabaseRequest("rpc/upsert_pump_identity_batch", { method: "POST", body: JSON.stringify({ identity_mint: mint, identities }) });
   return true;
+}
+
+export async function persistFomoFollowerSnapshot(owner: PlatformProfileRecord, followers: PlatformFollowerRecord[], metrics: FollowerEdgeMetrics) {
+  if (!isSupabaseConfigured()) return false;
+  await supabaseRequest("rpc/capture_fomo_follower_snapshot", {
+    method: "POST",
+    body: JSON.stringify({
+      owner_profile_id: owner.platformProfileId,
+      owner_handle: owner.handle,
+      owner_display_name: owner.displayName,
+      owner_profile_url: owner.profileUrl,
+      follower_items: followers.map((follower) => ({
+        platform_profile_id: follower.platformFollowerId,
+        handle: follower.handle,
+        profile_url: follower.profileUrl,
+        wallet: follower.verifiedWallet,
+        resolution_status: follower.resolutionStatus,
+      })),
+      snapshot_metrics: metrics,
+      snapshot_observed_at: new Date(metrics.calculatedAt).toISOString(),
+    }),
+  });
+  return true;
+}
+
+type SignalSnapshotRow = { value: FollowerEdgeMetrics };
+export async function readFollowerEdgeSnapshot(platform: "pump" | "fomo", platformProfileId: string): Promise<FollowerEdgeMetrics | null> {
+  if (!isSupabaseConfigured()) return null;
+  const subjectKey = `${platform}:${platformProfileId}`;
+  const path = `signal_snapshots?subject_type=eq.profile&subject_key=eq.${encodeURIComponent(subjectKey)}&metric_name=eq.follower_edge&select=value&order=observed_at.desc&limit=1`;
+  const response = await supabaseRequest(path);
+  const rows = await response.json() as SignalSnapshotRow[];
+  return rows[0]?.value ?? null;
 }
 
 type TokenSocialActorRow = {

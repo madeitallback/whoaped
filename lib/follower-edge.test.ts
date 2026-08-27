@@ -20,7 +20,7 @@ describe("Follower Edge", () => {
       wallet("inactive", 0, 10, 0.8, 0.5),
       wallet("insufficient", 1, 2, 1, 0.5),
     ], { visibleFollowers: 100, accessibleFollowers: 100, sampledFollowers: 4 }, 1_000);
-    expect(result).toMatchObject({ activeFollowers30d: 3, scorableFollowers: 2, profitableFollowers: 1, followerEdge: 0.5, calculatedAt: 1_000 });
+    expect(result).toMatchObject({ platform: "pump", activeFollowers30d: 3, scorableFollowers: 2, profitableFollowers: 1, followerEdge: 0.5, calculatedAt: 1_000 });
   });
 
   it("uses equal-wallet medians instead of pooling trade counts", () => {
@@ -41,5 +41,11 @@ describe("Follower Edge", () => {
 
   it("keeps unavailable Pump follower data distinct from an empty population", () => {
     expect(unavailableFollowerEdge(1_094_902, 1_000)).toMatchObject({ visibleFollowers: 1_094_902, followerEdge: null, status: "unavailable", calculatedAt: 1_000 });
+  });
+
+  it("labels a user-triggered Fomo sample without presenting it as public graph coverage", () => {
+    const result = calculateFollowerEdge([wallet("one", 2, 4, 0.75, 0.4)], { visibleFollowers: 100, accessibleFollowers: 8, sampledFollowers: 1 }, 1_000, { platform: "fomo", sampleStrategy: "user-triggered-visible-dom" });
+    expect(result).toMatchObject({ platform: "fomo", sampleStrategy: "user-triggered-visible-dom", followerEdge: 1 });
+    expect(result.notices.join(" ")).toContain("explicit Companion action");
   });
 });
