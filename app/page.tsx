@@ -1,127 +1,156 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
-import type { Buyer, ScanResponse, SupplySnapshot } from "@/lib/types";
+import { useEffect, useMemo, useState } from "react";
+import { formatDuration } from "@/lib/analysis";
+import type { FollowerEdgeMetrics } from "@/lib/follower-edge";
+import type { AnalysisProfile, Source } from "@/lib/types";
+import { TokenLauncher } from "./token-launcher";
 
-type Candidate = { mint: string; name: string; symbol: string; image: string | null; mc: number | null };
-type ApiError = { ok: false; code: string; error: string; candidates?: Candidate[] };
+const sourceCopy: Record<Source, { title: string; detail: string }> = {
+  manual: { title: "Any trader", detail: "Paste a Solana wallet, Pump profile URL, Fomo profile URL, or @Fomo handle." },
+  pump: { title: "Pump", detail: "Paste a Pump profile URL or public Solana wallet." },
+  fomo: { title: "Fomo", detail: "Paste a Fomo profile URL or @handle — the verified Solana wallet resolves automatically." },
+};
+type Feed = "all" | "pump" | "fomo";
+type ActivityWindow = "7d" | "30d" | "all";
+type PumpDirectoryProfile = { rank: number; label: string; handle: string; wallet: string; profileUrl: string };
+const money = (value: number | null) => value === null ? "—" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0, signDisplay: "always" }).format(value);
+const percent = (value: number | null) => value === null ? "—" : `${(value * 100).toFixed(1)}%`;
+const shortWallet = (address: string) => `${address.slice(0, 4)}…${address.slice(-4)}`;
 
-const short = (address: string) => `${address.slice(0, 5)}…${address.slice(-4)}`;
-const number = (value: number) => new Intl.NumberFormat("en-US", { maximumFractionDigits: value < 100 ? 2 : 0 }).format(value);
-const pct = (value: number) => `${number(value)}%`;
-const time = (value: string | null) => value ? new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "completion transaction indexed";
-
-export default function Home() {
-  const [input, setInput] = useState("");
-  const [data, setData] = useState<ScanResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [candidates, setCandidates] = useState<Candidate[]>([]);
+export default function HomePage() {
+  const [source, setSource] = useState<Source>("manual");
+  const [label, setLabel] = useState("");
+  const [handle, setHandle] = useState("");
+  const [solanaAddress, setSolanaAddress] = useState("");
+  const [evmAddress, setEvmAddress] = useState("");
+  const [profile, setProfile] = useState<AnalysisProfile | null>(null);
+  const [watchlist, setWatchlist] = useState<AnalysisProfile[]>([]);
+  const [leaderboard, setLeaderboard] = useState<AnalysisProfile[]>([]);
+  const [pumpDirectory, setPumpDirectory] = useState<PumpDirectoryProfile[]>([]);
+  const [pumpDirectoryError, setPumpDirectoryError] = useState("");
+  const [followerEdge, setFollowerEdge] = useState<FollowerEdgeMetrics | null>(null);
+  const [followerEdgeLabel, setFollowerEdgeLabel] = useState("");
+  const [followerEdgeLoading, setFollowerEdgeLoading] = useState(false);
+  const [followerEdgeError, setFollowerEdgeError] = useState("");
+  const [candidateText, setCandidateText] = useState("");
+  const [fomoCandidates, setFomoCandidates] = useState<string[]>([]);
+  const [rankedCandidates, setRankedCandidates] = useState<AnalysisProfile[]>([]);
+  const [feed, setFeed] = useState<Feed>("all");
+  const [activityWindow, setActivityWindow] = useState<ActivityWindow>("30d");
+  const [discoveryError, setDiscoveryError] = useState("");
+  const [discovering, setDiscovering] = useState(false);
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [tab, setTab] = useState<"holders" | "buyers">("holders");
-  const [filter, setFilter] = useState("all");
-  const [chart, setChart] = useState<SupplySnapshot[]>([]);
-
-  async function scan(value = input) {
-    setLoading(true); setError(null); setCandidates([]);
-    try {
-      const response = await fetch("/api/scan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ input: value }) });
-      const body = await response.json() as ScanResponse | ApiError;
-      if (!body.ok) { setError(body.error); setCandidates(body.candidates || []); setData(null); return; }
-      setData(body); setInput(body.mint); setFilter("all");
-    } catch { setError("The scan service is unavailable. Check your connection and try again."); }
-    finally { setLoading(false); }
+  const copy = sourceCopy[source];
+  const lastUpdated = useMemo(() => profile ? new Date(profile.updatedAt).toLocaleString() : "", [profile]);
+  const displayedLeaderboard = useMemo(() => {
+    const cutoff = activityWindow === "all" ? 0 : Math.floor(Date.now() / 1000) - (activityWindow === "7d" ? 7 : 30) * 86400;
+    return leaderboard.filter((item) => feed === "all" || item.source === feed).filter((item) => !cutoff || (item.metrics.lastActivityAt ?? 0) >= cutoff).sort((a, b) => (b.metrics.score ?? -1) - (a.metrics.score ?? -1));
+  }, [leaderboard, feed, activityWindow]);
+  function mergeLeaderboard(profiles: AnalysisProfile[]) {
+    setLeaderboard((current) => {
+      const next = new Map(current.map((item) => [item.id, item]));
+      profiles.forEach((item) => next.set(item.id, item));
+      return [...next.values()];
+    });
   }
+  async function loadWatchlist() { const response = await fetch("/api/watchlist"); if (response.ok) setWatchlist(await response.json()); }
+  async function loadLeaderboard() { const response = await fetch("/api/leaderboard"); if (response.ok) setLeaderboard(await response.json()); }
+  async function loadPumpDirectory() {
+    setPumpDirectoryError("");
+    try {
+      const response = await fetch("/api/discovery/pump");
+      const rawBody = await response.text();
+      const body = rawBody ? JSON.parse(rawBody) as { profiles?: PumpDirectoryProfile[]; error?: string } : {};
+      if (!response.ok) throw new Error(body.error || "Pump directory unavailable.");
+      setPumpDirectory(body.profiles ?? []);
+    } catch (cause) {
+      setPumpDirectory([]);
+      setPumpDirectoryError(cause instanceof Error ? cause.message : "Pump directory unavailable.");
+    }
+  }
+  async function loadFollowerEdgeWallet(wallet: string, edgeLabel: string) {
+    setFollowerEdgeLoading(true); setFollowerEdge(null); setFollowerEdgeError(""); setFollowerEdgeLabel(edgeLabel);
+    try {
+      const response = await fetch(`/api/platforms/pump/follower-edge?address=${encodeURIComponent(wallet)}&sample=20`);
+      const body = await response.json() as FollowerEdgeMetrics & { error?: string };
+      if (!response.ok) throw new Error(body.error || "Follower Edge failed.");
+      setFollowerEdge(body);
+    } catch (cause) { setFollowerEdgeError(cause instanceof Error ? cause.message : "Follower Edge failed."); }
+    finally { setFollowerEdgeLoading(false); }
+  }
+  async function loadFollowerEdge(item: PumpDirectoryProfile) { await loadFollowerEdgeWallet(item.wallet, item.label); }
   useEffect(() => {
-    if (!data || !data.warnings.some(note => /indexing/i.test(note))) return;
-    const timer = window.setInterval(() => {
-      void fetch("/api/index", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mint: data.mint }) })
-        .then(response => response.json())
-        .then((state: { ok?: boolean; dune?: string; helius?: string }) => {
-          if (state.ok && state.dune !== "running" && state.dune !== "queued" && state.helius === "completed") void scan(data.mint);
-        })
-        .catch(() => undefined);
-    }, 15_000);
-    return () => window.clearInterval(timer);
-  }, [data]);
+    void loadWatchlist(); void loadLeaderboard(); void loadPumpDirectory();
+    const params = new URLSearchParams(window.location.search);
+    const wallet = params.get("wallet"); if (wallet) setSolanaAddress(wallet);
+    const requestedSource = params.get("source"); if (requestedSource === "pump" || requestedSource === "fomo" || requestedSource === "manual") setSource(requestedSource);
+    if (params.get("label")) setLabel(params.get("label") ?? "");
+    if (params.get("handle")) setHandle(params.get("handle") ?? "");
+    const followerWallet = params.get("followerWallet");
+    if (followerWallet) void loadFollowerEdgeWallet(followerWallet, params.get("followerLabel") || shortWallet(followerWallet));
+    const imported = params.get("candidates");
+    if (imported) { try { const decoded = JSON.parse(atob(imported)) as Array<{ source?: string; label?: string; solanaAddress?: string }>; setCandidateText(decoded.map((item) => `${item.source ?? "pump"},${item.label ?? ""},${item.solanaAddress ?? ""}`).join("\n")); } catch { /* malformed extension input */ } }
+    const importedFomo = params.get("fomoCandidates");
+    if (importedFomo) { try { setFomoCandidates(JSON.parse(atob(importedFomo)) as string[]); } catch { /* malformed extension input */ } }
+  }, []);
   useEffect(() => {
-    if (!data) { setChart([]); return; }
-    void fetch(`/api/chart?mint=${encodeURIComponent(data.mint)}`)
-      .then(response => response.ok ? response.json() as Promise<{ ok: true; points: SupplySnapshot[] }> : null)
-      .then(body => setChart(body?.points || []))
-      .catch(() => setChart([]));
-  }, [data?.mint]);
-  function submit(event: FormEvent) { event.preventDefault(); void scan(); }
-  function copy(value: string) { navigator.clipboard?.writeText(value); }
-  const rows = useMemo(() => {
-    if (!data) return [];
-    if (tab === "holders") return data.holders.filter(x => filter === "all" || x.label === filter || (filter === "other" && x.label === "unknown"));
-    return data.pumpfunBuyers.wallets.filter(x => filter === "all" || x.bucket === filter || x.phase === filter || (filter === "holding" && x.stillHolds));
-  }, [data, tab, filter]);
-
+    if (!followerEdgeLoading && !followerEdge && !followerEdgeError) return;
+    const frame = requestAnimationFrame(() => document.querySelector("#pump-follower-edge")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    return () => cancelAnimationFrame(frame);
+  }, [followerEdgeLoading, followerEdge, followerEdgeError]);
+  async function submit(event: React.FormEvent) {
+    event.preventDefault(); setLoading(true); setError(""); setProfile(null);
+    try {
+      const response = await fetch("/api/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source, label, handle, solanaAddress, evmAddress }) });
+      const body = await response.json() as AnalysisProfile & { error?: string };
+      if (!response.ok) throw new Error(body.error || "Analysis failed.");
+      setProfile(body); mergeLeaderboard([body]);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Analysis failed."); } finally { setLoading(false); }
+  }
+  async function addToWatchlist() { if (!profile) return; await fetch("/api/watchlist", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ profileId: profile.id }) }); await loadWatchlist(); }
+  async function rankCandidates(event: React.FormEvent) {
+    event.preventDefault(); setDiscovering(true); setDiscoveryError(""); setRankedCandidates([]);
+    const candidates = candidateText.split("\n").map((line) => line.trim()).filter(Boolean).map((line) => { const [sourceValue = "pump", labelValue = "", addressValue = ""] = line.split(",").map((part) => part.trim()); return { source: sourceValue === "fomo" ? "fomo" : "pump", label: labelValue || undefined, solanaAddress: addressValue }; });
+    try {
+      const response = await fetch("/api/discover", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ candidates }) });
+      const body = await response.json() as { profiles?: AnalysisProfile[]; errors?: Array<{ error: string }>; error?: string };
+      if (!response.ok) throw new Error(body.error || "Unable to rank candidates.");
+      const profiles = body.profiles ?? []; setRankedCandidates(profiles); mergeLeaderboard(profiles);
+      if (body.errors?.length) setDiscoveryError(body.errors.map((item) => item.error).join(" "));
+    } catch (cause) { setDiscoveryError(cause instanceof Error ? cause.message : "Unable to rank candidates."); } finally { setDiscovering(false); }
+  }
   return <main>
-    <header className="nav"><a className="brand" href="/">WHO<span>APED</span>?</a><div className="status"><i /> Solana mainnet</div></header>
-    <section className="intro">
-      <p className="eyebrow">WALLET INTELLIGENCE / SOLANA</p>
-      <h1>Who bought this coin?</h1>
-      <p className="lede">Split unique buyers into <b>verified FOMO</b>, <b>Pump.fun</b>, and <b>other unknown wallets</b>. Data coverage is shown on every scan.</p>
-      <form onSubmit={submit} className="search"><span>⌕</span><input value={input} onChange={e => setInput(e.target.value)} placeholder="Paste a mint, Pump.fun URL, or search $TICKER" aria-label="Token mint or ticker" /><button disabled={loading}>{loading ? "SCANNING…" : "SCAN"}</button></form>
-      <p className="hint">Works with Pump.fun coins and any SPL token. Current holder coverage starts with the largest 20 accounts while the full index is built.</p>
+    <nav><a className="brand" href="/">WHOAPED.EXE</a><div><span className="live-dot" />SOLANA NETWORK <span className="muted">/ TOKEN + FOLLOWER INTELLIGENCE</span></div></nav>
+    <section className="leader-hero"><div><p className="eyebrow">SOCIAL TRADING INTELLIGENCE</p><h1>Find the wallets worth <em>following.</em></h1><p>Import visible Pump or Fomo leaderboard candidates, then inspect their realized on-chain behavior — not screenshots.</p></div><div className="hero-score"><span>WALLET PERFORMANCE BETA</span><b>60% WR + <i>40% R</i></b><small>individual wallet metric · not follower quality</small></div></section>
+    <TokenLauncher />
+    <section className="panel leaderboard-board" id="pump-directory"><div className="board-head"><div><p className="eyebrow">PUBLIC PUMP DIRECTORY / REFRESHES EVERY 5 MIN</p><h2>Most-followed Pump profiles</h2><p>Choose a profile to calculate the live quality of a rank-stratified sample of its active followers.</p></div><a className="import-link" href="https://pump.fun/profiles" target="_blank" rel="noreferrer">OPEN PUMP ↗</a></div><div className="table-wrap"><table><thead><tr><th>#</th><th>PROFILE</th><th>WALLET</th><th>SOURCE</th><th /></tr></thead><tbody>{pumpDirectory.map((item) => <tr key={item.wallet}><td className="rank">{String(item.rank).padStart(2, "0")}</td><td><b>@{item.label}</b><small>pump.fun/{item.handle}</small></td><td><small>{shortWallet(item.wallet)}</small></td><td><span className="source-pill pump">PUMP</span></td><td><button className="row-open" type="button" disabled={followerEdgeLoading} onClick={() => void loadFollowerEdge(item)}>FOLLOWER EDGE ↗</button></td></tr>)}{!pumpDirectory.length && <tr className="table-empty"><td colSpan={5}><b>{pumpDirectoryError || "Loading Pump's public directory…"}</b><span>Try refreshing in a moment.</span></td></tr>}</tbody></table></div><div className="board-footer"><span>{pumpDirectory.length} public Pump profiles</span><span>Follower Edge is calculated on demand and cached. Sample size, coverage, and confidence are always shown.</span></div></section>
+    <FollowerEdgeCard metrics={followerEdge} label={followerEdgeLabel} loading={followerEdgeLoading} error={followerEdgeError} />
+    <section className="panel leaderboard-board" id="leaderboard">
+      <div className="board-head"><div><p className="eyebrow">DISCOVERY FEED</p><h2>WHOAPED Leaderboard</h2><p>Every trader you resolve and analyze is added here automatically.</p></div><a className="import-link" href="#manual-analysis">+ ANALYZE TRADER</a></div>
+      <div className="board-controls"><div className="segmented">{(["all", "pump", "fomo"] as Feed[]).map((item) => <button type="button" onClick={() => setFeed(item)} className={feed === item ? "selected" : ""} key={item}>{item === "all" ? "ALL" : item.toUpperCase()}</button>)}</div><div className="segmented">{(["7d", "30d", "all"] as ActivityWindow[]).map((item) => <button type="button" onClick={() => setActivityWindow(item)} className={activityWindow === item ? "selected" : ""} key={item}>{item === "all" ? "ALL ACTIVITY" : `ACTIVE ${item.toUpperCase()}`}</button>)}</div></div>
+      <div className="table-wrap"><table><thead><tr><th>#</th><th>TRADER</th><th>SOURCE</th><th>WALLET PERF β</th><th>WIN RATE</th><th>WEIGHTED RETURN</th><th>MEDIAN HOLD</th><th>LAST ACTIVE</th><th /></tr></thead><tbody>{displayedLeaderboard.map((item, index) => <LeaderboardRow key={item.id} profile={item} rank={index + 1} onSelect={() => setProfile(item)} />)}{!displayedLeaderboard.length && <tr className="table-empty"><td colSpan={9}><b>Your leaderboard is ready.</b><span>Paste a Pump/Fomo profile link, a Fomo handle, or a public Solana wallet to add the first trader.</span><a href="#manual-analysis">Analyze a trader ↓</a></td></tr>}</tbody></table></div>
+      <div className="board-footer"><span>{displayedLeaderboard.length} analyzed wallets</span><span>Wallet Performance Beta is an individual-wallet estimate. Follower Edge will be a separate social metric with explicit coverage and sample size.</span></div>
     </section>
-    {error && <section className="notice error"><b>{error}</b>{candidates.length > 0 && <div className="candidates">{candidates.map(c => <button key={c.mint} onClick={() => void scan(c.mint)}><span>{c.image ? <img src={c.image} alt="" /> : "◎"}</span><b>{c.symbol}</b><small>{c.name} · {short(c.mint)}</small></button>)}</div>}</section>}
-    {loading && <section className="loading"><div className="scanline" /><span>Reading mint metadata</span><span>Resolving top holders</span><span>Matching verified FOMO labels</span><span>Parsing curve buys</span></section>}
-    {data && <>
-      <section className="token-head">
-        <TokenIcon image={data.token.image} symbol={data.token.symbol} /><div><p className="eyebrow">{data.token.isPumpFun ? "PUMP.FUN TOKEN" : "SPL TOKEN"}</p><h2>{data.token.name} <em>${data.token.symbol}</em></h2><button className="address" onClick={() => copy(data.mint)}>{short(data.mint)} <span>⧉</span></button></div>
-        <div className={`badge ${data.token.graduated ? "green" : "orange"}`}>{data.token.graduated === null ? "NOT PUMP" : data.token.graduated ? "GRADUATED" : "ON CURVE"}</div>
-      </section>
-      <section className="hero-grid">
-        <MixCard label="FOMO" tone="pink" data={data.mix.fomo} detail="Verified FOMO wallets" />
-        <MixCard label="PUMP.FUN" tone="yellow" data={data.mix.pumpfun} detail="Curve buy wallets" />
-        <MixCard label="OTHER" tone="blue" data={data.mix.other} detail="Unknown / unlabelled wallets" />
-      </section>
-      <p className="coverage">ⓘ {data.split.coverageNote}</p>
-      {data.token.isPumpFun && <p className="coverage">⌁ Curve index: {data.indexing.curve.state === "completed" ? `complete · ${number(data.indexing.curve.buyersFound)} buyers found` : `${data.indexing.curve.state} · ${number(data.indexing.curve.scannedSignatures)} signatures scanned · ${number(data.indexing.curve.buyersFound)} buyers found`}</p>}
-      {data.token.graduated && <p className="coverage">⌁ PumpSwap index: {data.indexing.postGrad.state === "completed" ? `complete · ${number(data.indexing.postGrad.buyersFound)} buyers found` : `${data.indexing.postGrad.state} · ${number(data.indexing.postGrad.scannedSignatures)} signatures scanned · ${number(data.indexing.postGrad.buyersFound)} buyers found`}</p>}
-      <p className="coverage">⌁ Holder index: {data.indexing.holders.state === "completed" ? `complete · ${number(data.indexing.holders.holderCount)} owners` : `${data.indexing.holders.state} · fast top-account view shown`}</p>
-      <p className="coverage">⌁ FOMO labels: {data.indexing.labels.state === "completed" ? `complete · ${number(data.indexing.labels.matched)} verified mappings` : `${data.indexing.labels.state} · ${number(data.indexing.labels.checked)} wallets checked`}</p>
-      <section className="context-grid">
-        <Metric title="Curve leftover" value={data.split.pumpfunCurvePctOfSupply === null ? "N/A" : pct(data.split.pumpfunCurvePctOfSupply)} sub={data.lifecycle.graduation ? `Graduated ${time(data.lifecycle.graduation.at)} · ${data.lifecycle.graduation.verification}` : data.token.curveProgressPct !== null ? `${pct(data.token.curveProgressPct)} to graduation` : "Not a Pump.fun curve"} accent="yellow" />
-        <Metric title="PumpSwap buyers" value={data.venues.pumpswapBuyers === null ? "INDEXING" : number(data.venues.pumpswapBuyers)} sub={data.token.graduated ? "Post-graduation wallets" : "N/A while on curve"} />
-        <Metric title="New after grad" value={data.venues.newAfterGrad === null ? "—" : number(data.venues.newAfterGrad)} sub="PumpSwap-only wallets" />
-        <Metric title="Creator balance" value={pct(data.split.creatorPctOfSupply)} sub={data.addresses.creator ? short(data.addresses.creator) : "Not detected"} accent="pink" />
-      </section>
-      <SupplyChart points={chart} graduation={data.lifecycle.graduation} />
-      <section className="section-head"><div><p className="eyebrow">ADDRESS INTELLIGENCE</p><h2>Who is still holding?</h2></div><div className="tabs"><button className={tab === "holders" ? "active" : ""} onClick={() => { setTab("holders"); setFilter("all"); }}>Holders <small>{number(data.split.scannedHolderCount)}</small></button><button className={tab === "buyers" ? "active" : ""} onClick={() => { setTab("buyers"); setFilter("all"); }}>Buyers <small>{data.pumpfunBuyers.uniqueBuyers}</small></button></div></section>
-      <section className="table-card"><div className="filters">{(tab === "holders" ? [["all", "All"], ["fomo", "FOMO"], ["pumpfun_curve", "Curve"], ["creator", "Creator"], ["other", "Other"]] : [["all", "All"], ["fomo", "FOMO"], ["pumpfun", "Curve"], ["curve_only", "Pre only"], ["pumpswap_only", "Post only"], ["both", "Both"], ["holding", "Still holding"]]).map(([key, label]) => <button key={key} className={filter === key ? "selected" : ""} onClick={() => setFilter(key)}>{label}</button>)}</div>
-        <div className="table-wrap"><table><thead><tr><th>#</th><th>Label</th><th>Owner</th><th>Handle</th>{tab === "buyers" && <th>Phase</th>}<th>{tab === "holders" ? "Tokens" : "Buy txs"}</th><th>% supply</th><th>Links</th></tr></thead><tbody>{rows.map((row, index) => <Row key={row.owner} row={row} index={index} buyers={tab === "buyers"} copy={copy} />)}</tbody></table></div>
-        {!rows.length && <p className="empty">No addresses in this group yet.</p>}
-      </section>
-      {data.warnings.length > 0 && <section className="notice warnings"><b>Scan notes</b>{data.warnings.map(w => <p key={w}>{w}</p>)}</section>}
-      <footer>FOMO wins the label priority. “Other” means self-custody or unknown — it is not a Phantom detector.</footer>
-    </>}
+    <section className="lower-grid leaderboard-summary"><div className="panel watchlist"><div className="panel-head"><div><p className="eyebrow">WATCHLIST</p><h2>Keep an eye on signal.</h2></div><span>{watchlist.length}</span></div>{watchlist.length ? <div className="watch-items">{watchlist.slice(0, 4).map((item) => <button key={item.id} onClick={() => setProfile(item)}><span>{item.label}</span><b>{item.metrics.score ?? "—"}</b><small>WALLET PERF β</small></button>)}</div> : <p className="empty-small">Add an analyzed trader to track their latest on-chain activity.</p>}</div><div className="panel method"><p className="eyebrow">CURRENT WALLET BETA</p><h2>Transparent components.</h2><ul><li>60% normalized realized win rate</li><li>40% normalized capital-weighted return</li><li>Median hold is displayed but not scored</li><li>Follower quality is not included yet</li></ul></div></section>
+    <section className="panel discovery" id="import"><div className="panel-head"><div><p className="eyebrow">IMPORT A SHORTLIST</p><h2>Score visible leaderboard traders.</h2></div><span className="badge">USER-TRIGGERED</span></div><p className="hint">One Pump wallet per line: <code>pump,display name,solana wallet</code>. Fomo handles can be entered individually in the resolver below.</p><form onSubmit={rankCandidates}><textarea value={candidateText} onChange={(event) => setCandidateText(event.target.value)} placeholder={"pump,Anglio,2ksQ77e9e5SS6VA6poanRGWfkU3R4R5wZnptbJHb2nx9\npump,another trader,verified Solana wallet"} /><button className="primary" disabled={discovering}>{discovering ? "SCORING WALLETS…" : "ADD TO LEADERBOARD"}</button></form>{discoveryError && <p className="error">{discoveryError}</p>}{rankedCandidates.length > 0 && <p className="success">{rankedCandidates.length} wallet{rankedCandidates.length === 1 ? "" : "s"} scored and added to your leaderboard.</p>}{fomoCandidates.length > 0 && <div className="fomo-queue"><p className="eyebrow">FOMO CANDIDATES</p><p className="hint">Select a trader to resolve their public verified wallet and run the analysis.</p><div className="ranked-list">{fomoCandidates.map((candidate) => <button type="button" key={candidate} onClick={() => { setSource("fomo"); setSolanaAddress(`@${candidate}`); setHandle(candidate); setLabel(candidate); document.querySelector("#manual-analysis")?.scrollIntoView({ behavior: "smooth" }); }}><span>FOMO</span><b>@{candidate}</b><small>Resolve + analyze</small></button>)}</div></div>}</section>
+    <section className="workspace analyzer-area" id="manual-analysis"><form className="panel analyzer" onSubmit={submit}><div className="panel-head"><div><p className="eyebrow">RESOLVE + ANALYZE</p><h2>{copy.title} Wallet</h2></div><span className="badge">ON-CHAIN</span></div><div className="source-tabs">{(Object.keys(sourceCopy) as Source[]).map((item) => <button type="button" className={source === item ? "selected" : ""} onClick={() => setSource(item)} key={item}>{item === "manual" ? "AUTO" : sourceCopy[item].title}</button>)}</div><p className="hint">{copy.detail}</p><label>Profile, handle, or wallet <strong>required</strong><input value={solanaAddress} onChange={(e) => setSolanaAddress(e.target.value)} placeholder="pump.fun/profile/… · fomo.family/profile/… · @handle · Solana wallet" spellCheck={false} /></label><label>Display label <span>optional</span><input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Override the profile name" /></label>{source === "fomo" && <aside className="notice">Fomo profiles resolve through the public verified Fomo wallet index. If it has no verified Solana wallet, the app will say so explicitly.</aside>}{error && <p className="error">{error}</p>}<button className="primary" disabled={loading}>{loading ? "RESOLVING + ANALYZING…" : "RUN LIVE ANALYSIS"}</button></form>{profile ? <ProfileCard profile={profile} updated={lastUpdated} onWatch={addToWatchlist} /> : <EmptyState />}</section>
+    <footer className="win-taskbar" aria-label="WHOAPED status bar"><span className="win-start">Start</span><span className="task-app">▣ WHOAPED — Intelligence</span><span className="tray">SOLANA ONLINE</span></footer>
   </main>;
 }
 
-function MixCard({ label, tone, data, detail }: { label: string; tone: string; data: ScanResponse["mix"]["fomo"]; detail: string }) { return <article className={`mix ${tone}`}><p>{label}</p><div className="mix-value">{number(data.buyers)} <small>{pct(data.pctOfBuyers)}</small></div><span>{detail}</span><div className="mix-bottom"><div><b>{pct(data.holdRate)}</b><small>hold rate</small></div><div><b>{pct(data.pctOfSupply)}</b><small>supply held</small></div></div></article>; }
-function Metric({ title, value, sub, accent }: { title: string; value: string; sub: string; accent?: string }) { return <article className={`metric ${accent || ""}`}><p>{title}</p><strong>{value}</strong><small>{sub}</small></article>; }
-function SupplyChart({ points, graduation }: { points: SupplySnapshot[]; graduation: ScanResponse["lifecycle"]["graduation"] }) {
-  const [showPrice, setShowPrice] = useState(false);
-  const [range, setRange] = useState<"15m" | "1h" | "1d" | "all">("all");
-  const windowMs = range === "15m" ? 15 * 60_000 : range === "1h" ? 60 * 60_000 : range === "1d" ? 24 * 60 * 60_000 : null;
-  const latestSource = points.at(-1);
-  const visible = windowMs && latestSource ? points.filter(point => new Date(point.observedAt).getTime() >= new Date(latestSource.observedAt).getTime() - windowMs) : points;
-  const latest = visible.at(-1);
-  const width = 700, height = 190, inset = 18;
-  const line = (field: keyof Pick<SupplySnapshot, "fomoPctOfSupply" | "preGradPctOfSupply" | "postGradPctOfSupply">) => visible.map((point, index) => `${inset + (width - inset * 2) * (visible.length === 1 ? .5 : index / (visible.length - 1))},${height - inset - Math.min(100, point[field]) / 100 * (height - inset * 2)}`).join(" ");
-  const prices = visible.map(point => point.priceUsd).filter((price): price is number => price !== null);
-  const priceMin = Math.min(...prices), priceMax = Math.max(...prices);
-  const priceLine = visible.map((point, index) => { if (point.priceUsd === null) return null; const x = inset + (width - inset * 2) * (visible.length === 1 ? .5 : index / (visible.length - 1)); const y = height - inset - ((priceMax === priceMin ? .5 : (point.priceUsd - priceMin) / (priceMax - priceMin)) * (height - inset * 2)); return `${x},${y}`; }).filter((value): value is string => value !== null).join(" ");
-  const firstTime = visible[0] ? new Date(visible[0].observedAt).getTime() : 0;
-  const lastTime = latest ? new Date(latest.observedAt).getTime() : 0;
-  const graduationTime = graduation?.at ? new Date(graduation.at).getTime() : null;
-  const graduationX = graduationTime !== null && graduationTime >= firstTime && graduationTime <= lastTime ? inset + (width - inset * 2) * (lastTime === firstTime ? .5 : (graduationTime - firstTime) / (lastTime - firstTime)) : null;
-  const usd = (value: number | null) => value === null ? "N/A" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: value < 1 ? 6 : 2 }).format(value);
-  return <section className="table-card" style={{ padding: 20, marginTop: 18 }}><div className="section-head" style={{ marginBottom: 10 }}><div><p className="eyebrow">OWNERSHIP HISTORY</p><h2>{showPrice ? "Price alongside supply" : "Supply held over time"}</h2></div><div><button className={showPrice ? "selected" : ""} onClick={() => setShowPrice(value => !value)} disabled={!prices.length}>Price overlay</button><small className="muted"> {latest ? `${number(latest.holderCount)} holders · ${latest.source === "dune_estimated" ? "Dune estimated" : latest.holderIndexComplete ? "complete holder index" : "partial index"}` : "Snapshots start after the first scan"}</small></div></div><div className="filters" style={{ padding: 0 }}>{(["15m", "1h", "1d", "all"] as const).map(value => <button key={value} className={range === value ? "selected" : ""} onClick={() => setRange(value)}>{value}</button>)}</div>{visible.length ? <><svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Supply share history" style={{ width: "100%", height: 220, display: "block" }}><line x1={inset} x2={width - inset} y1={height - inset} y2={height - inset} stroke="rgba(255,255,255,.15)" /><polyline points={line("fomoPctOfSupply")} fill="none" stroke="#ff4ea3" strokeWidth="3" /><polyline points={line("preGradPctOfSupply")} fill="none" stroke="#ffc83d" strokeWidth="3" /><polyline points={line("postGradPctOfSupply")} fill="none" stroke="#67a8ff" strokeWidth="3" />{graduationX !== null && <line x1={graduationX} x2={graduationX} y1={inset} y2={height - inset} stroke="#b987ff" strokeWidth="2" strokeDasharray="4 4" />}{showPrice && priceLine && <polyline points={priceLine} fill="none" stroke="#7dffbd" strokeWidth="2" strokeDasharray="5 4" />}</svg><div className="filters" style={{ padding: 0 }}><span className="handle">● FOMO {pct(latest?.fomoPctOfSupply || 0)}</span><span style={{ color: "#ffc83d" }}>● Pre-grad {pct(latest?.preGradPctOfSupply || 0)}</span><span style={{ color: "#67a8ff" }}>● Post-grad {pct(latest?.postGradPctOfSupply || 0)}</span>{graduationX !== null && <span style={{ color: "#b987ff" }}>┆ Graduation {graduation?.verification}</span>}{latest?.source === "dune_estimated" && <span className="muted">Dune daily balances · delayed/estimated</span>}{showPrice && <span style={{ color: "#7dffbd" }}>● Price {usd(latest?.priceUsd || null)} · liq {usd(latest?.liquidityUsd || null)}</span>}<span className="muted">{time(visible[0].observedAt)} → {time(latest!.observedAt)}</span></div></> : <p className="empty">No ownership snapshots for this range yet.</p>}</section>;
+function LeaderboardRow({ profile, rank, onSelect }: { profile: AnalysisProfile; rank: number; onSelect: () => void }) { const metrics = profile.metrics; return <tr onClick={onSelect} tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter") onSelect(); }}><td className="rank">{rank < 4 ? `0${rank}` : rank}</td><td><b>{profile.label}</b><small>{shortWallet(profile.wallets[0].address)}</small></td><td><span className={`source-pill ${profile.source}`}>{profile.source}</span></td><td><strong className="alpha-number">{metrics.score ?? "—"}</strong></td><td>{percent(metrics.winRate)}</td><td className={(metrics.capitalWeightedReturn ?? 0) >= 0 ? "positive" : "negative"}>{percent(metrics.capitalWeightedReturn)}</td><td>{formatDuration(metrics.medianHoldSeconds)}</td><td><small>{metrics.lastActivityAt ? new Date(metrics.lastActivityAt * 1000).toLocaleDateString() : "No swaps"}</small></td><td><button className="row-open" type="button" onClick={(event) => { event.stopPropagation(); onSelect(); }}>VIEW ↗</button></td></tr>; }
+function EmptyState() { return <section className="panel result empty"><div className="grid-orbit" /><p className="eyebrow">SELECT A TRADER</p><h2>See the flow<br />behind the metrics.</h2><p>Choose any row from the leaderboard, or analyze a public Solana wallet directly.</p><div className="legend"><span><b>01</b> wallet history</span><span><b>02</b> realized FIFO PnL</span><span><b>03</b> performance beta</span></div></section>; }
+function ProfileCard({ profile, updated, onWatch }: { profile: AnalysisProfile; updated: string; onWatch: () => void }) { const { metrics } = profile; const contradictsPnl = metrics.score !== null && metrics.score >= 45 && ((metrics.realizedPnlUsd ?? 0) < 0 || (metrics.capitalWeightedReturn ?? 0) < 0); return <section className="panel result"><div className="result-top"><div><p className="eyebrow">{profile.source.toUpperCase()} / WALLET PERFORMANCE</p><h2>{profile.label}</h2><p className="address">{profile.wallets[0].address}</p></div><button className="watch-button" onClick={onWatch}>+ WATCH</button></div><div className="score-row"><div className="score"><span>{metrics.score ?? "—"}</span><small>PERF<br />BETA</small></div><div><p className="score-title">{metrics.score === null ? "Insufficient realized data" : contradictsPnl ? "High win rate, but negative realized performance" : "Individual wallet performance estimate"}</p><p className="muted">60% normalized win rate + 40% normalized capital-weighted return. This is not Follower Edge.</p></div></div>{contradictsPnl && <p className="inline-notice">The beta score and realized result disagree. Review loss size and weighted return instead of relying on the score alone.</p>}<div className="metrics"><Metric label="WIN RATE" value={percent(metrics.winRate)} /><Metric label="WEIGHTED RETURN" value={percent(metrics.capitalWeightedReturn)} tone={(metrics.capitalWeightedReturn ?? 0) >= 0 ? "positive" : "negative"} /><Metric label="MEDIAN HOLD" value={formatDuration(metrics.medianHoldSeconds)} /><Metric label="REALIZED PNL" value={money(metrics.realizedPnlUsd)} tone={(metrics.realizedPnlUsd ?? 0) >= 0 ? "positive" : "negative"} /></div><div className="activity"><span>REALIZED SAMPLE</span><b>{metrics.closedLots} verified closed FIFO lot{metrics.closedLots === 1 ? "" : "s"}</b><span>{profile.trades.length} parsed swap legs · last activity {metrics.lastActivityAt ? new Date(metrics.lastActivityAt * 1000).toLocaleString() : "unknown"} · analyzed {updated}</span></div>{profile.notices.map((notice) => <p className="inline-notice" key={notice}>{notice}</p>)}</section>; }
+function Metric({ label, value, tone }: { label: string; value: string; tone?: string }) { return <div><span>{label}</span><b className={tone}>{value}</b></div>; }
+
+function FollowerEdgeCard({ metrics, label, loading, error }: { metrics: FollowerEdgeMetrics | null; label: string; loading: boolean; error: string }) {
+  if (!loading && !metrics && !error) return null;
+  return <section className="panel follower-edge-card" id="pump-follower-edge" aria-live="polite" aria-busy={loading}>
+    <div className="panel-head"><div><p className="eyebrow">PUMP / FOLLOWER INTELLIGENCE</p><h2>{label ? `@${label}` : "Follower Edge"}</h2></div><span className="badge">90D SAMPLE</span></div>
+    {loading && <div className="edge-loading"><b>CALCULATING FOLLOWER EDGE…</b><p>Sampling several depths of the public follower list, then checking active and realized on-chain performance in one Dune batch.</p></div>}
+    {error && <p className="error">{error}</p>}
+    {metrics && <><div className="edge-primary"><strong>{metrics.followerEdge === null ? "—" : percent(metrics.followerEdge)}</strong><div><span>FOLLOWER EDGE</span><p>{metrics.profitableFollowers} profitable / {metrics.scorableFollowers} scorable active followers</p></div></div><div className="edge-grid"><Metric label="ACTIVE 30D" value={`${metrics.activeFollowers30d} / ${metrics.sampledFollowers}`} /><Metric label="SCORABLE" value={`${metrics.scorableFollowers}`} /><Metric label="MEDIAN FOLLOWER WR" value={percent(metrics.medianFollowerWinRate)} /><Metric label="MEDIAN FOLLOWER RETURN" value={percent(metrics.medianFollowerReturn)} tone={(metrics.medianFollowerReturn ?? 0) >= 0 ? "positive" : "negative"} /><Metric label="PUBLIC SAMPLE" value={`${metrics.sampledFollowers} / ${metrics.visibleFollowers.toLocaleString()}`} /><Metric label="CONFIDENCE" value={metrics.confidence.toUpperCase()} /></div><p className="edge-method">Rank-stratified public sample · {metrics.accessibleFollowers.toLocaleString()} relations accessible through Pump · metric {metrics.metricVersion}</p>{metrics.notices.map((notice) => <p className="inline-notice" key={notice}>{notice}</p>)}</>}
+  </section>;
 }
-function TokenIcon({ image, symbol }: { image: string | null; symbol: string }) { const [failed, setFailed] = useState(false); return <div className="token-icon" style={{ overflow: "hidden" }}>{image && !failed ? <img src={image} alt={`${symbol} token`} onError={() => setFailed(true)} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : "◎"}</div>; }
-function Row({ row, index, buyers, copy }: { row: Buyer | ScanResponse["holders"][number]; index: number; buyers: boolean; copy: (x: string) => void }) { const label = buyers ? (row as Buyer).bucket : (row as ScanResponse["holders"][number]).label; const handle = row.fomoHandle; const phase = buyers ? ({ curve_only: "Pre only", pumpswap_only: "Post only", both: "Both", other_dex: "DEX" } as const)[(row as Buyer).phase] : null; return <tr><td>{index + 1}</td><td><span className={`pill ${label}`}>{label.replace("pumpfun_", "")}</span></td><td><button className="owner" onClick={() => copy(row.owner)}>{short(row.owner)} <span>⧉</span></button></td><td>{handle ? <span className="handle">@{handle}</span> : <span className="muted">—</span>}</td>{buyers && <td>{phase}</td>}<td>{buyers ? number((row as Buyer).buyTxCount) : number((row as ScanResponse["holders"][number]).uiAmount)}</td><td>{pct(row.pctOfSupply)}</td><td><a href={`https://solscan.io/account/${row.owner}`} target="_blank" rel="noreferrer">↗</a></td></tr>; }

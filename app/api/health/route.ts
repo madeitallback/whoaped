@@ -1,7 +1,21 @@
-import { NextResponse } from "next/server";
-import { connection } from "@/lib/solana";
-import { supabaseReady } from "@/lib/supabase";
+import { isSupabaseConfigured, supabaseReady } from "@/lib/data/supabase";
+import { connection } from "@/lib/token-intel/solana";
+
+export const runtime = "nodejs";
+export const maxDuration = 15;
+
 export async function GET() {
-  try { const [slot, supabase] = await Promise.all([connection().getSlot(), supabaseReady()]); return NextResponse.json({ ok: true, rpc: "reachable", slot, fomoIndexConfigured: Boolean(process.env.FOMOTAGS_BASE || process.env.FOMOSCAN_API_KEY), supabaseConfigured: Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SECRET_KEY), supabaseReady: supabase }); }
-  catch { return NextResponse.json({ ok: false, rpc: "unreachable" }, { status: 503 }); }
+  const [rpc, database] = await Promise.allSettled([connection().getSlot(), supabaseReady()]);
+  const rpcReachable = rpc.status === "fulfilled";
+  const databaseReady = database.status === "fulfilled" && database.value;
+  const ok = rpcReachable && (!isSupabaseConfigured() || databaseReady);
+  return Response.json({
+    ok,
+    product: "WHOAPED",
+    rpc: rpcReachable ? "reachable" : "unreachable",
+    slot: rpc.status === "fulfilled" ? rpc.value : null,
+    supabaseConfigured: isSupabaseConfigured(),
+    supabaseReady: databaseReady,
+    checkedAt: new Date().toISOString(),
+  }, { status: ok ? 200 : 503 });
 }
