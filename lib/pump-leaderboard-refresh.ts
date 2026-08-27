@@ -21,18 +21,20 @@ export function metricsFromDuneSummary(summary: DuneWalletSummary): WalletMetric
   const closedLots = numeric(summary.closed_positions) ?? 0;
   const winRate = numeric(summary.win_rate);
   const weightedReturn = numeric(summary.capital_weighted_return);
-  const score = winRate === null || weightedReturn === null ? null : Math.round(100 * (0.6 * clamp((winRate - 0.35) / 0.35) + 0.4 * clamp((weightedReturn + 0.25) / 1.25)));
+  const sampleConfidence = clamp(closedLots / 20);
+  const rawScore = winRate === null || weightedReturn === null ? null : 100 * (0.6 * clamp((winRate - 0.35) / 0.35) + 0.4 * clamp((weightedReturn + 0.25) / 1.25));
+  const score = rawScore === null ? null : Math.round(50 + (rawScore - 50) * (0.25 + 0.75 * sampleConfidence));
   const lastActivityAt = summary.last_activity ? Math.floor(new Date(summary.last_activity).getTime() / 1000) : null;
-  return { score, closedLots, realizedPnlUsd: numeric(summary.realized_pnl_usd), capitalDeployedUsd: null, capitalWeightedReturn: weightedReturn, winRate, medianHoldSeconds: null, volumeUsd: null, lastActivityAt: Number.isFinite(lastActivityAt) ? lastActivityAt : null, active: (numeric(summary.swaps_30d) ?? 0) > 0 };
+  return { score, closedLots, realizedPnlUsd: numeric(summary.realized_pnl_usd), capitalDeployedUsd: null, capitalWeightedReturn: weightedReturn, winRate, medianHoldSeconds: null, volumeUsd: null, lastActivityAt: Number.isFinite(lastActivityAt) ? lastActivityAt : null, active: (numeric(summary.swaps_30d) ?? 0) > 0, sampleConfidence, profitFactor: numeric(summary.profit_factor ?? null), medianWinnerReturn: numeric(summary.median_winner_return ?? null), medianLoserReturn: numeric(summary.median_loser_return ?? null) };
 }
 
 export function pumpSummaryProfile(directory: PumpDirectoryProfile, summary: DuneWalletSummary, updatedAt: number): AnalysisProfile {
   const metrics = metricsFromDuneSummary(summary);
-  return { id: stablePumpProfileId(directory.wallet), dataset: "pump_daily_v1", source: "pump", label: directory.label, handle: directory.handle, wallets: [{ address: directory.wallet, chain: "solana", verified: true }], metrics, trades: [], updatedAt, status: metrics.score === null ? "partial" : "ready", notices: [`Daily Pump directory rank #${directory.rank}.`, "Wallet metrics use one cost-bounded Dune batch over the last 90 days.", "Median hold remains unavailable in the batch summary and is never inferred."] };
+  return { id: stablePumpProfileId(directory.wallet), dataset: "pump_daily_v2", source: "pump", label: directory.label, handle: directory.handle, wallets: [{ address: directory.wallet, chain: "solana", verified: true }], metrics, trades: [], updatedAt, status: metrics.score === null ? "partial" : "ready", notices: [`Daily Pump directory rank #${directory.rank}.`, "Wallet metrics use one cost-bounded Dune batch over the last 90 days.", "The score is sample-adjusted toward neutral until 20 closed positions are observed.", "Median hold remains unavailable in the batch summary and is never inferred."] };
 }
 
 export async function hasFreshPumpDailyProfiles(now = Date.now()) {
-  return (await listProfiles(100)).some((profile) => profile.dataset === "pump_daily_v1" && profile.updatedAt >= now - PUMP_REFRESH_TTL_MS);
+  return (await listProfiles(100)).some((profile) => profile.dataset === "pump_daily_v2" && profile.updatedAt >= now - PUMP_REFRESH_TTL_MS);
 }
 
 async function executeRefresh(force: boolean): Promise<PumpRefreshResult> {

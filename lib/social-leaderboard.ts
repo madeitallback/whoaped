@@ -10,6 +10,7 @@ export type SocialBoardRow = {
   label: string;
   avatarUrl: string | null;
   profileUrl: string;
+  wallet: string | null;
   metricLabel: "24H REALIZED PNL" | "WALLET PERF";
   primaryMetric: number | null;
   pnl24hUsd: number | null;
@@ -21,6 +22,8 @@ export type SocialBoardRow = {
   medianHoldSeconds: number | null;
   lastActivityAt: number | null;
   sampleLabel: string;
+  sampleConfidence: number | null;
+  profitFactor: number | null;
 };
 
 type Json = Record<string, unknown>;
@@ -55,6 +58,7 @@ export function parseFomoLeaderboard(payload: unknown): SocialBoardRow[] {
       label: clean(row.label, handle),
       avatarUrl: clean(row.avatarUrl, "") || null,
       profileUrl: `https://fomo.family/profile/${encodeURIComponent(handle)}`,
+      wallet: null,
       metricLabel: "24H REALIZED PNL" as const,
       primaryMetric: finite(row.pnl),
       pnl24hUsd: finite(row.pnl),
@@ -66,6 +70,8 @@ export function parseFomoLeaderboard(payload: unknown): SocialBoardRow[] {
       medianHoldSeconds: null,
       lastActivityAt: null,
       sampleLabel: "Fomo / rolling 24h",
+      sampleConfidence: null,
+      profitFactor: null,
     }];
   });
 }
@@ -86,6 +92,7 @@ export function pumpProfilesToBoard(profiles: AnalysisProfile[]): SocialBoardRow
     label: profile.label,
     avatarUrl: null,
     profileUrl: profile.handle ? `https://pump.fun/profile/${encodeURIComponent(profile.handle)}` : `https://solscan.io/account/${encodeURIComponent(profile.wallets[0].address)}`,
+    wallet: profile.wallets[0].address,
     metricLabel: "WALLET PERF",
     primaryMetric: profile.metrics.score,
     pnl24hUsd: null,
@@ -96,7 +103,9 @@ export function pumpProfilesToBoard(profiles: AnalysisProfile[]): SocialBoardRow
     weightedReturn: profile.metrics.capitalWeightedReturn,
     medianHoldSeconds: profile.metrics.medianHoldSeconds,
     lastActivityAt: profile.metrics.lastActivityAt,
-    sampleLabel: profile.dataset === "pump_daily_v1" ? `${profile.metrics.closedLots} closed positions / 90d batch` : `${profile.metrics.closedLots} verified closed lot${profile.metrics.closedLots === 1 ? "" : "s"}`,
+    sampleLabel: profile.dataset === "pump_daily_v1" || profile.dataset === "pump_daily_v2" ? `${profile.metrics.closedLots} closed positions / 90d batch` : `${profile.metrics.closedLots} verified closed lot${profile.metrics.closedLots === 1 ? "" : "s"}`,
+    sampleConfidence: profile.metrics.sampleConfidence ?? null,
+    profitFactor: profile.metrics.profitFactor ?? null,
   }));
 }
 

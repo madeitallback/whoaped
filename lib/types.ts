@@ -42,11 +42,15 @@ export interface WalletMetrics {
   volumeUsd: number | null;
   lastActivityAt: number | null;
   active: boolean;
+  sampleConfidence?: number | null;
+  profitFactor?: number | null;
+  medianWinnerReturn?: number | null;
+  medianLoserReturn?: number | null;
 }
 
 export interface AnalysisProfile {
   id: string;
-  dataset?: "pump_daily_v1";
+  dataset?: "pump_daily_v1" | "pump_daily_v2";
   source: Source;
   label: string;
   handle?: string;

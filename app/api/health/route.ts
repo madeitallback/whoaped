@@ -16,6 +16,12 @@ export async function GET() {
     slot: rpc.status === "fulfilled" ? rpc.value : null,
     supabaseConfigured: isSupabaseConfigured(),
     supabaseReady: databaseReady,
+    providers: {
+      helius: Boolean(process.env.HELIUS_API_KEY),
+      birdeye: Boolean(process.env.BIRDEYE_API_KEY),
+      dune: Boolean(process.env.DUNE_API_KEY),
+      fomoscan: Boolean(process.env.FOMOSCAN_API_KEY),
+    },
     checkedAt: new Date().toISOString(),
   }, { status: ok ? 200 : 503 });
 }

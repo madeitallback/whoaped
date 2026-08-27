@@ -771,8 +771,8 @@ Completion record — 2026-08-26:
 
 ### Phase 1 — wallet metric completeness
 
-- [ ] Add profit factor.
-- [ ] Add median winning and losing returns.
+- [x] Add profit factor to the cost-bounded Pump daily batch and expose it on the board when the provider returns it.
+- [x] Add median winning and losing returns to the Pump daily batch contract; retain null when no qualifying side exists.
 - [ ] Add winner/loser median hold.
 - [ ] Add capital-weighted median hold.
 - [ ] Add Conviction Hold.
@@ -1854,3 +1854,23 @@ Production verification: functional commit `49fb44c53c5cf36e1c7d8a0172a99b411465
 Provider cost/performance impact: exactly one live Pump directory request, one 20-wallet Dune batch, and one Supabase gateway upsert completed the initial refresh. Future reads remain inside the 20-hour freshness gate; the scheduled refresh runs once daily at 06:00 UTC.
 Remaining honest metric gap: batch Pump median hold is null because the efficient Dune wallet-summary query does not reconstruct FIFO hold durations. Full individual analyses can still populate richer wallet evidence; the daily board does not infer missing values.
 Exact next phase: improve ranking quality by adding sample-confidence thresholds and a price/profit-weighted hold-time batch metric, then connect token-level social actors to their leaderboard performance without increasing per-page provider calls.
+
+## 31. Completion record — launch integration and ranking trust (2026-08-27)
+
+- [x] Audit the complete user-facing surface for Pump/Fomo parity rather than treating one wallet or token as a special case.
+- [x] Keep one mixed daily board while preserving the source boundary: official Fomo rolling-24h realized PnL versus verified Pump 90-day wallet performance.
+- [x] Link token-level Pump actors to the daily board by verified wallet and Fomo actors by canonical handle, with no additional Dune query per token page.
+- [x] Show matched performance directly beside each token actor; unmatched actors explicitly say `Not on today's ranked board` instead of displaying a fabricated zero.
+- [x] Add Pump sample confidence and shrink the raw performance score toward neutral until 20 closed positions are observed, preventing tiny lucky samples from dominating the board.
+- [x] Add Pump profit factor plus median winning/losing return fields to the bounded Dune summary and keep missing values null.
+- [x] Version the automatic Pump dataset as `pump_daily_v2` so the first production read forces a real refresh of the new ranking contract instead of reusing stale v1 summaries.
+- [x] Add Pump/Fomo thesis filters and per-source counts in the token cockpit. State the honest boundary inline: FomoScan is the automated thesis provider; Pump thesis is shown only when attributable evidence has been captured.
+- [x] Publish `/methodology`, canonical metadata, Open Graph/Twitter metadata, `robots.txt`, `sitemap.xml`, and a product-native not-found state.
+- [x] Extend `/api/health` with non-secret provider configuration signals for Helius, Birdeye, Dune, and FomoScan.
+- [x] Use `next/image` for remote Fomo avatars and restrict the allowed image host in `next.config.mjs`.
+
+Launch boundary: Pump and Fomo are integrated in the mixed leaderboard, token social-actor map, position view, thesis evidence model, filters, and timeline. Automatic thesis ingestion is currently deeper for Fomo because it has an attributable provider endpoint; WHOAPED deliberately does not scrape or invent a Pump user's intent. The full Fomo follower graph still requires the privacy-preserving Companion capture documented in record 28 and is not required for the token-first web launch.
+
+Tests run before deployment: 55/55 Vitest tests pass; Next 16 production build and TypeScript pass; `git diff --check` passes.
+
+Post-launch research, not launch blockers: exact FIFO/profit-weighted median hold in the cost-bounded Pump batch; Conviction Hold, Baghold Rate, Patience Edge, and KOL frontrun graph; broader long-history identity coverage. These need a versioned metric design and validation dataset and must not be rushed into today's product as misleading numbers.

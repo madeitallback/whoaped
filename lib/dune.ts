@@ -30,6 +30,9 @@ export type DuneWalletSummary = {
   win_rate: number | string | null;
   capital_weighted_return: number | string | null;
   realized_pnl_usd: number | string | null;
+  profit_factor?: number | string | null;
+  median_winner_return?: number | string | null;
+  median_loser_return?: number | string | null;
 };
 
 const wait = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -176,13 +179,19 @@ export async function fetchDuneWalletSummaries(addresses: string[], days = 90, t
     FROM token_totals WHERE buy_quantity > 0 AND sell_quantity > 0 AND buy_usd > 0 AND sell_usd > 0
   ), wallet_metrics AS (
     SELECT address, count(*) AS closed_positions, count_if(proceeds_usd > cost_usd) AS winning_positions,
-      sum(cost_usd) AS capital_deployed_usd, sum(proceeds_usd - cost_usd) AS realized_pnl_usd
+      sum(cost_usd) AS capital_deployed_usd, sum(proceeds_usd - cost_usd) AS realized_pnl_usd,
+      sum(CASE WHEN proceeds_usd > cost_usd THEN proceeds_usd - cost_usd ELSE 0 END) AS gross_profit_usd,
+      abs(sum(CASE WHEN proceeds_usd < cost_usd THEN proceeds_usd - cost_usd ELSE 0 END)) AS gross_loss_usd,
+      approx_percentile(CASE WHEN proceeds_usd > cost_usd THEN (proceeds_usd - cost_usd) / cost_usd END, 0.5) AS median_winner_return,
+      approx_percentile(CASE WHEN proceeds_usd < cost_usd THEN (proceeds_usd - cost_usd) / cost_usd END, 0.5) AS median_loser_return
     FROM positions GROUP BY 1
   ) SELECT w.address, coalesce(a.swaps_30d,0) AS swaps_30d, a.last_activity,
     coalesce(m.closed_positions,0) AS closed_positions,
     CASE WHEN m.closed_positions > 0 THEN cast(m.winning_positions AS double) / m.closed_positions END AS win_rate,
     CASE WHEN m.capital_deployed_usd > 0 THEN m.realized_pnl_usd / m.capital_deployed_usd END AS capital_weighted_return,
-    m.realized_pnl_usd
+    m.realized_pnl_usd,
+    CASE WHEN m.gross_loss_usd > 0 THEN m.gross_profit_usd / m.gross_loss_usd END AS profit_factor,
+    m.median_winner_return, m.median_loser_return
   FROM wallet_list w LEFT JOIN activity a ON a.address=w.address LEFT JOIN wallet_metrics m ON m.address=w.address
   ORDER BY w.address`;
   return executeDuneSql<DuneWalletSummary>(sql, timeoutMs);
