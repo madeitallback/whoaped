@@ -1,4 +1,8 @@
-import { existsSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { createServer } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { chromium } from "playwright-core";
 
 const candidates = process.platform === "win32"
@@ -17,14 +21,62 @@ const target = (process.env.WHOAPED_BOOTSTRAP_URL || "https://www.whoaped.xyz").
 if (!executablePath) throw new Error("Chrome or Edge is required for the one-time Fomo connection.");
 if (!workerSecret && !bootstrapToken) throw new Error("A short-lived FOMO_BOOTSTRAP_TOKEN or WORKER_SECRET is required.");
 
-const browser = await chromium.launch({ executablePath, headless: false });
+const debugPort = await new Promise((resolve, reject) => {
+  const server = createServer();
+  server.once("error", reject);
+  server.listen(0, "127.0.0.1", () => {
+    const address = server.address();
+    if (!address || typeof address === "string") return reject(new Error("Could not reserve a local browser port."));
+    server.close((error) => error ? reject(error) : resolve(address.port));
+  });
+});
+const profileDir = mkdtempSync(join(tmpdir(), "whoaped-fomo-"));
+const browserProcess = spawn(executablePath, [
+  `--remote-debugging-port=${debugPort}`,
+  `--user-data-dir=${profileDir}`,
+  "--new-window",
+  "about:blank",
+], { stdio: "ignore", windowsHide: false });
+
+let browser;
+for (let attempt = 0; attempt < 60; attempt += 1) {
+  try {
+    const response = await fetch(`http://127.0.0.1:${debugPort}/json/version`);
+    if (response.ok) {
+      browser = await chromium.connectOverCDP(`http://127.0.0.1:${debugPort}`);
+      break;
+    }
+  } catch {}
+  await new Promise((resolve) => setTimeout(resolve, 250));
+}
+if (!browser) {
+  browserProcess.kill();
+  rmSync(profileDir, { recursive: true, force: true });
+  throw new Error("Could not connect to the temporary Chrome/Edge window.");
+}
+
 try {
-  const context = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
+  const context = browser.contexts()[0];
   const page = await context.newPage();
   await page.goto("https://fomo.family/profile/frankdegods", { waitUntil: "domcontentloaded" });
-  process.stdout.write("Connect the dedicated WHOAPED account in the opened Fomo window. Waiting for the leaderboard…\n");
-  await page.getByRole("button", { name: "Leaderboard", exact: true }).waitFor({ state: "visible", timeout: 10 * 60_000 });
-  const raw = await context.storageState();
+  process.stdout.write("Connect the dedicated WHOAPED account in the opened Fomo window. Waiting for authenticated leaderboard data…\n");
+  let authenticatedLeaderboard = false;
+  page.on("response", (response) => {
+    try {
+      const url = new URL(response.url());
+      if (url.hostname === "prod-api.fomo.family" && url.pathname.startsWith("/v2/leaderboard") && response.status() === 200) {
+        authenticatedLeaderboard = true;
+      }
+    } catch {}
+  });
+  const deadline = Date.now() + 10 * 60_000;
+  while (!authenticatedLeaderboard && Date.now() < deadline) {
+    const leaderboard = page.getByRole("button", { name: "Leaderboard", exact: true });
+    if (await leaderboard.isVisible().catch(() => false)) await leaderboard.click().catch(() => undefined);
+    await page.waitForTimeout(1_500);
+  }
+  if (!authenticatedLeaderboard) throw new Error("Fomo login was not completed before the 10-minute timeout.");
+  const raw = await context.storageState({ indexedDB: true });
   const storageState = {
     cookies: raw.cookies.filter((cookie) => /(^|\.)fomo\.family$/i.test(cookie.domain.replace(/^\./, ""))),
     origins: raw.origins.filter((origin) => {
@@ -43,4 +95,6 @@ try {
   process.stdout.write("Fomo collector connected. The encrypted cloud session is ready.\n");
 } finally {
   await browser.close();
+  browserProcess.kill();
+  rmSync(profileDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }

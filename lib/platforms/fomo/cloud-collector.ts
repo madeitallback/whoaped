@@ -87,7 +87,7 @@ export async function collectFomoLeaderboards(storageState: FomoStorageState) {
       snapshots.push({ window: item.window, sourceUrl: "https://fomo.family/", rows: rows.slice(0, 500) });
     }
 
-    const nextStorageState = sanitizeFomoStorageState(await context.storageState());
+    const nextStorageState = sanitizeFomoStorageState(await context.storageState({ indexedDB: true }));
     await context.close();
     return { snapshots, storageState: nextStorageState };
   } finally {
