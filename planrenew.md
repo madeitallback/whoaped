@@ -1768,6 +1768,7 @@ Remaining platform-depth work after this phase: complete Fomo follower collectio
 - [x] Reorder the token workspace around verified social actors and reconciled position state before thesis and chronological evidence.
 - [x] Add a token-level signal readout plus explicit counts for social actors, current/trimmed positions, verified exits, unproven exits, and public theses.
 - [x] Put HOLDING/TRIMMED/EXITED/INDEXING beside every resolved Pump/Fomo actor so users can answer the core question without joining tables mentally.
+- [x] Keep current-holder proof independent from historical indexing so a verified current Pump/Fomo holder is never summarized as “not holding” merely because its long-history job is incomplete.
 - [x] Align the browser extension popup and injected card with the same visual hierarchy and evidence-first language; bump Companion to `0.8.0`.
 
 Product boundary retained: Pump Follower Edge is labeled as a Pump social signal. Fomo identities and FomoScan thesis evidence are live where verified, but WHOAPED does not claim a Fomo follower graph until that relationship source is implemented and validated.
