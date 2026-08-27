@@ -1758,3 +1758,16 @@ Commit/deployment identifiers: Git commit `381ee1b92ce0b0ae5c2ac337753bd0c3068f4
 - Verification: 46/46 tests pass, TypeScript and the 20-route production build pass. Production commit `f58c97308c7a62fe7eda3c47c8c342597d49455d` deployed as `dpl_Hy3qTXk5Fwmv4Q3WtCsRPmvvxTQz` (`READY`). A live Fartcoin re-index returned 41 reconciled wallets and the 200-event API window contained 126 verified sells, producing 22 `EXITED` states while 19 unproven exits remained correctly labeled `NOT_HELD`.
 
 Remaining platform-depth work after this phase: complete Fomo follower collection and broader long-history social identity coverage.
+
+## 27. Completion record — product-first information architecture (2026-08-27)
+
+- [x] Replace the Windows 97 web chrome with a modern, high-contrast social-intelligence interface while retaining compact data/terminal accents.
+- [x] Make token exploration the primary homepage action and state the product promise in plain language: who aped, who held, why, and whether the surrounding crowd wins.
+- [x] Hide empty leaderboards, watchlists, extension-import tools, and unavailable Pump directories until they contain actionable data.
+- [x] Expose Pump Follower Edge directly from every successfully analyzed Pump profile, not only from a directory row.
+- [x] Reorder the token workspace around verified social actors and reconciled position state before thesis and chronological evidence.
+- [x] Add a token-level signal readout plus explicit counts for social actors, current/trimmed positions, verified exits, unproven exits, and public theses.
+- [x] Put HOLDING/TRIMMED/EXITED/INDEXING beside every resolved Pump/Fomo actor so users can answer the core question without joining tables mentally.
+- [x] Align the browser extension popup and injected card with the same visual hierarchy and evidence-first language; bump Companion to `0.8.0`.
+
+Product boundary retained: Pump Follower Edge is labeled as a Pump social signal. Fomo identities and FomoScan thesis evidence are live where verified, but WHOAPED does not claim a Fomo follower graph until that relationship source is implemented and validated.

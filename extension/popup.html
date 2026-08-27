@@ -2,16 +2,16 @@
 <html lang="en">
   <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /><title>WHOAPED</title><link rel="stylesheet" href="popup.css" /></head>
   <body>
-    <main class="window">
-      <header><span class="app-icon">WA</span><b>WHOAPED Companion</b><span class="window-controls" aria-hidden="true">_ □ ×</span></header>
-      <section class="window-body">
-        <p class="dialog-copy">Enter a wallet you independently verified.</p>
-        <label>WHOAPED server<input id="endpoint" placeholder="WHOAPED app URL" spellcheck="false" /></label>
-        <label>Solana wallet<input id="wallet" placeholder="Public wallet address" spellcheck="false" /></label>
-        <button id="open">Analyze Wallet</button>
-        <aside>On Pump profiles, the inline window calculates live Follower Edge automatically.</aside>
+    <main>
+      <header><span class="app-icon">WA</span><div><b>WHOAPED</b><small>Social trading companion</small></div><span class="live"><i></i> LIVE</span></header>
+      <section>
+        <p class="dialog-copy">Analyze a verified Solana wallet, or open a Pump/Fomo profile to see WHOAPED inline.</p>
+        <label>App endpoint<input id="endpoint" placeholder="https://whoaped-phi.vercel.app" spellcheck="false" /></label>
+        <label>Solana wallet<input id="wallet" placeholder="Paste public wallet address" spellcheck="false" /></label>
+        <button id="open">OPEN WALLET INTELLIGENCE ↗</button>
+        <aside><b>Pump:</b> Follower Edge loads beside supported profiles.<br /><b>Fomo:</b> wallet performance loads only when a public wallet is verified.</aside>
       </section>
-      <footer><span class="status-light"></span> Ready</footer>
+      <footer><span class="status-light"></span> Evidence first · no guessed identities</footer>
     </main>
     <script src="popup.js"></script>
   </body>

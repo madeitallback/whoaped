@@ -3,8 +3,8 @@ import "./globals.css";
 import "./discovery.css";
 
 export const metadata: Metadata = {
-  title: "WHOAPED",
-  description: "Token, wallet, and follower intelligence for Solana traders.",
+  title: "WHOAPED — Social intelligence for Solana",
+  description: "See who aped, who held, what they said, and whether their followers win across Pump and Fomo.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
