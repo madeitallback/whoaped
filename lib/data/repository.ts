@@ -236,7 +236,8 @@ type FomoLeaderboardRow = {
 
 export async function readFomoFirstPartyLeaderboard(window: FomoLeaderboardObservation["window"] = "24h"): Promise<FomoLeaderboardObservation[]> {
   if (!isSupabaseConfigured()) return [];
-  const response = await supabaseRequest(`fomo_leaderboard_observations?period=eq.${window}&select=*&order=captured_at.desc,platform_rank.asc&limit=500`);
+  const columns = "period,normalized_handle,handle,display_name,avatar_url,platform_rank,realized_pnl_usd,volume_usd,trade_count,follower_count,source_url,captured_at";
+  const response = await supabaseRequest(`fomo_leaderboard_observations?period=eq.${window}&select=${columns}&order=captured_at.desc,platform_rank.asc&limit=500`);
   const candidates = await response.json() as FomoLeaderboardRow[];
   const latestCapturedAt = candidates[0]?.captured_at;
   const rows = latestCapturedAt ? candidates.filter((row) => row.captured_at === latestCapturedAt) : [];
