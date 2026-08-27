@@ -1949,3 +1949,40 @@ Verification before deployment: 60/60 Vitest tests pass, including one-wallet/tw
 Honest coverage boundary: the live token page always shows on-chain holders. Pump profiles resolve from the public wallet profile contract. Fomo profiles appear when already persisted through FomoScan or after an authorized visible-page capture can uniquely match a sufficiently precise displayed balance. Ambiguous/coarsely rounded captures remain unresolved instead of being guessed. Repeated transaction-time evidence remains the next confidence upgrade for observations that cannot be uniquely resolved from the current balance fingerprint.
 
 Production verification: functional commit `eeb016aba8d23275b9c4854a1b6d201050308d9f` deployed automatically from `madeitallback/whoaped/main` as `dpl_8pdidNPQByEHoG9mfEcH12TstpeH` (`READY`). The real `aura` token page rendered 1,000 current wallet positions; Pump profiles appeared inside their matching wallet rows with token amount, USD value, supply share, profile link, and Solscan link, while unidentified wallets remained visible. The browser console was clean. Vercel runtime logs contained only the known FomoScan quota-402 thesis refresh warnings; the route returned its cached/fallback 200 response and the new first-party holder capture path does not depend on that quota.
+
+## 34. Approved-first design phase — modern Windows 97 (2026-08-27)
+
+Status: mockup produced; implementation intentionally not started until visual approval. Reference artifact: `docs/design/whoaped-win97-modern-mockup-v1.png`.
+
+### Visual direction
+
+- Use Windows 95/98-era window chrome as the interaction language: cobalt title bars, square controls, restrained bevels, one-pixel highlights/shadows, desktop-style status bar, and compact tabs.
+- Modernize the content layer: warm light-gray shell, off-white data surfaces, generous but efficient spacing, accessible contrast, clean sans-serif values, and monospace/pixel labels.
+- Keep Pump mint and Fomo violet strictly semantic. Avoid neon, glassmorphism, gradients, dark cyberpunk terminal styling, giant marketing headlines, and nostalgia for its own sake.
+- Make `PUMP + FOMO HOLDER MAP` the dominant window. One row remains one wallet position; multiple platform profiles live in the profile cell.
+- Default to a paginated top-holder view instead of rendering 1,000 DOM rows. Expose search, sorting, row-count control, and filters for all/Pump/Fomo.
+- Keep the thesis feed and signal summary in a right rail so wallet ownership remains the first answer and social context remains immediately adjacent.
+- Preserve explicit unidentified, unresolved, stale, partial, external-transfer, and no-hold-time states.
+- Use a bottom status bar for network, index coverage, and freshness rather than scattering status pills across the page.
+
+### Interface implementation checklist after approval
+
+- [ ] Extract design tokens for Win97-modern colors, borders, shadows, spacing, typography, focus states, and semantic Pump/Fomo/status accents.
+- [ ] Build reusable primitives: desktop shell, title bar, window panel, toolbar tabs, status bar, metric tile, profile chip, position badge, and pagination.
+- [ ] Rebuild the token workspace first; this is the canonical product surface.
+- [ ] Add holder search, deterministic sorting, pagination/virtualization, and mobile/tablet responsive behavior without losing column meaning.
+- [ ] Rework the thesis feed and signal summary into compact adjacent evidence panels.
+- [ ] Apply the same system to homepage/trending, mixed leaderboard, methodology, loading, empty, degraded, and error states.
+- [ ] Re-skin Companion only after the web product is approved; do not let extension work block the site redesign.
+- [ ] Run accessibility, keyboard navigation, responsive, performance, visual-regression, and real-token browser verification before deployment.
+
+### Product/data backlog retained after the visual phase
+
+- [ ] Replace the FomoScan-quota dependency with persisted first-party Fomo leaderboard, holder, position, and thesis observations.
+- [ ] Complete the transaction-time Fomo identity resolver using event count/order/side/time, mint, signer, route marker, and balance evidence.
+- [ ] Build progressive, cost-bounded Pump profile enrichment for the full indexed holder set rather than only the fast cohort.
+- [ ] Add a validated hold-metric pipeline: median hold, profit-weighted hold, conviction hold, and baghold rate with explicit sample confidence.
+- [ ] Complete Fomo follower-edge coverage and the KOL frontrun graph without presenting unavailable data as zero.
+- [ ] Add rate limiting, provider budgets, durable caching, abuse protection, monitoring, and alerts before a broad public launch.
+- [ ] Validate `whoaped.xyz` after nameserver propagation and confirm apex redirect, `www`, HTTPS, canonical metadata, and sitemap.
+- [ ] Run a real multi-token/multi-profile validation cohort and measure identity precision, recall, freshness, latency, and provider cost.
