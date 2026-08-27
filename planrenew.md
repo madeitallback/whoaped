@@ -1998,6 +1998,9 @@ Decision: the Windows 97 direction was explored and then intentionally rejected 
 - [x] Apply all three production database migrations, verify service-only access, and deploy `whoaped-data` Edge Function version 7.
 - [x] Verification passes: 20 Vitest files / 64 tests, TypeScript no-emit, extension JavaScript syntax, `git diff --check`, and the 29-page/route Next.js production build.
 - [x] Push commit `0c928e5` to `madeitallback/whoaped/main`; Vercel production is live, `whoaped.xyz` redirects to `www`, HTTPS/health/Supabase pass, the first-party Fomo GET endpoint responds, and the deployed leaderboard renders without console errors.
+- [x] Seed production from the user-confirmed authenticated Fomo discovery panel: 150 visible 24h rows, 150 7d rows, 150 30d rows, and 100 all-time rows (550 observations total) with rank, rolling PnL, visible trade count, handle, display name, and avatar.
+- [x] Repair the post-capture read path after production logs identified the gateway-safe-path rejection of `select=*`; commit `7129252` uses explicit columns and deployment `dpl_AFw2ff1se65d3YWcbfN9XLXVQDXy` is `READY`.
+- [x] Production proof: all four first-party endpoints return their captured leaders, the combined 24h API contains 150 Fomo plus 23 Pump profiles, the rendered board interleaves Fomo and Pump ranks, avatars load, the confidence column is absent, and the browser console is clean.
 - [ ] Complete a real multi-token/multi-profile Fomo capture cohort and publish precision/recall/freshness/cost measurements before claiming universal Fomo identity coverage.
 - [ ] Add a durable authorized collector or official founder-provided endpoint for unattended refreshes; a Vercel server cannot reuse a user's personal browser session.
 - [ ] Add launch-grade rate limiting, provider budgets, monitoring, and alerting.
