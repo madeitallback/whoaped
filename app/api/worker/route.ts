@@ -7,6 +7,8 @@ import { findCurveBuyerPage } from "@/lib/token-intel/buyers";
 import { connection } from "@/lib/token-intel/solana";
 import { parseMintInput } from "@/lib/token-intel/solana";
 import { scanToken } from "@/lib/token-intel/scan";
+import { dispatchWorker } from "@/lib/worker-dispatch";
+import { after } from "next/server";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -89,7 +91,8 @@ async function runWorker(request: Request) {
       results.push({ id: job.id, mint: mint.toBase58(), status: "failed" });
     }
   }
-  return Response.json({ ok: true, claimed: jobs.length, results });
+  if (jobs.length > 0) after(() => dispatchWorker(request.url));
+  return Response.json({ ok: true, claimed: jobs.length, results, drainScheduled: jobs.length > 0 });
 }
 
 export const POST = runWorker;
