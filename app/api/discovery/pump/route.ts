@@ -14,10 +14,15 @@ const profilePattern = /\["\$","li","([1-9A-HJ-NP-Za-km-z]{32,44})",\{[\s\S]*?"a
  * server route so browsers do not have to scrape a third-party page directly.
  */
 export async function GET() {
-  const response = await fetch(DIRECTORY_URL, {
-    headers: { "User-Agent": "WHOAPED/1.0 (public-directory-reader)" },
-    next: { revalidate: 300 },
-  });
+  let response: Response;
+  try {
+    response = await fetch(DIRECTORY_URL, {
+      headers: { "User-Agent": "WHOAPED/1.0 (public-directory-reader)" },
+      next: { revalidate: 300 },
+    });
+  } catch {
+    return Response.json({ error: "Pump's public directory is unavailable." }, { status: 502 });
+  }
   if (!response.ok) return Response.json({ error: "Pump's public directory is unavailable." }, { status: 502 });
 
   const page = (await response.text()).replace(/\\"/g, '"');

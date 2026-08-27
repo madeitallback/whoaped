@@ -176,6 +176,17 @@ input,textarea { width:100%;margin-top:5px;padding:8px;color:#000;background:var
 @media(max-width:800px){body{padding-bottom:40px}main{width:calc(100% - 12px);margin:6px;padding-inline:5px}nav>div{display:none}.leader-hero{grid-template-columns:1fr;padding:8px 0}.leader-hero h1{font-size:40px;letter-spacing:-2px}.workspace,.lower-grid{grid-template-columns:1fr}.result{min-height:420px}.edge-grid{grid-template-columns:repeat(2,1fr)}.board-head{display:block}.import-link{display:inline-block;margin-top:7px}.board-controls,.board-footer{display:block}.segmented+.segmented,.board-footer span+span{margin-top:6px}.win-start{padding-inline:7px}.task-app{min-width:0;flex:1}.tray{display:none}}
 
 .token-launcher { margin:0 0 12px;padding:0 12px 12px; }
+.trending-board { margin:0 0 12px;padding:0 12px 12px; }
+.trending-board .board-head { margin:0 -12px; }
+.trending-grid { display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:12px; }
+.trending-card { display:flex;min-width:0;min-height:158px;flex-direction:column;gap:5px;padding:12px;color:#000;text-decoration:none;background:#fff;border:2px solid;border-color:#fff #000 #000 #fff; }
+.trending-card:hover,.trending-card:focus-visible { background:#ffffe1;outline:2px dotted #000;outline-offset:-6px; }
+.trending-card-top { display:flex;align-items:center;justify-content:space-between;font:10px "Lucida Console",monospace; }
+.trending-card>strong { overflow:hidden;margin-top:5px;font-size:24px;line-height:1;text-overflow:ellipsis; }
+.trending-card>b { font-size:15px; }
+.trending-card>small { overflow:hidden;color:#555;white-space:nowrap;text-overflow:ellipsis; }
+.trending-card>em { margin-top:auto;color:var(--title);font:700 10px "Lucida Console",monospace;font-style:normal; }
+.trending-name { overflow:hidden;color:#555;white-space:nowrap;text-overflow:ellipsis; }
 .token-launcher .panel-head { margin:0 -12px 12px; }
 .token-launcher form { max-width:900px; }
 .token-launch-row { display:grid;grid-template-columns:1fr auto;gap:6px;align-items:end; }
@@ -204,6 +215,16 @@ input,textarea { width:100%;margin-top:5px;padding:8px;color:#000;background:var
 .token-table tbody tr:hover a { color:#fff; }
 .token-table a { color:var(--title);font-weight:700; }
 .thesis-panel { margin-top:10px; }
+.social-timeline { margin-top:10px; }
+.timeline-list { display:grid;gap:0;padding:7px; }
+.timeline-list article { display:grid;grid-template-columns:150px 72px 1fr;gap:10px;align-items:start;padding:12px 4px;border-top:1px dotted #808080; }
+.timeline-list article:first-child { border-top:0; }
+.timeline-list time { color:#555;font:9px "Lucida Console",monospace; }
+.timeline-list p { margin:5px 0 0;line-height:1.45; }
+.timeline-list a { color:var(--title); }
+.timeline-list .source-pill { margin-left:6px; }
+.timeline-kind { display:inline-flex;justify-content:center;padding:3px 5px;color:#fff;background:var(--title);font:700 9px "Lucida Console",monospace; }
+.timeline-kind.thesis { background:#7b287d; }
 .thesis-list { display:grid;gap:6px;padding:7px; }
 .thesis-list article { padding:10px;background:#fff;border:2px solid;border-color:#808080 #fff #fff #808080; }
 .thesis-list article>div,.thesis-list article footer { display:flex;align-items:center;flex-wrap:wrap;gap:7px;font:9px "Lucida Console",monospace; }
@@ -212,4 +233,4 @@ input,textarea { width:100%;margin-top:5px;padding:8px;color:#000;background:var
 .thesis-list article footer { justify-content:space-between;color:#555; }
 .thesis-empty { min-height:110px;display:flex;flex-direction:column;justify-content:center;gap:8px;padding:16px;text-align:center;background:#fff;border:2px inset #fff; }
 .thesis-empty span { color:#555; }
-@media(max-width:800px){.token-launch-row{grid-template-columns:1fr}.token-launch-row button{width:100%}.token-metrics{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:800px){.trending-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.token-launch-row{grid-template-columns:1fr}.token-launch-row button{width:100%}.token-metrics{grid-template-columns:repeat(2,1fr)}.timeline-list article{grid-template-columns:1fr;gap:5px}}

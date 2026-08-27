@@ -5,6 +5,7 @@ import { formatDuration } from "@/lib/analysis";
 import type { FollowerEdgeMetrics } from "@/lib/follower-edge";
 import type { AnalysisProfile, Source } from "@/lib/types";
 import { TokenLauncher } from "./token-launcher";
+import { TrendingTokens } from "./trending-tokens";
 
 const sourceCopy: Record<Source, { title: string; detail: string }> = {
   manual: { title: "Any trader", detail: "Paste a Solana wallet, Pump profile URL, Fomo profile URL, or @Fomo handle." },
@@ -124,6 +125,7 @@ export default function HomePage() {
   return <main>
     <nav><a className="brand" href="/">WHOAPED.EXE</a><div><span className="live-dot" />SOLANA NETWORK <span className="muted">/ TOKEN + FOLLOWER INTELLIGENCE</span></div></nav>
     <section className="leader-hero"><div><p className="eyebrow">SOCIAL TRADING INTELLIGENCE</p><h1>Find the wallets worth <em>following.</em></h1><p>Import visible Pump or Fomo leaderboard candidates, then inspect their realized on-chain behavior — not screenshots.</p></div><div className="hero-score"><span>WALLET PERFORMANCE BETA</span><b>60% WR + <i>40% R</i></b><small>individual wallet metric · not follower quality</small></div></section>
+    <TrendingTokens />
     <TokenLauncher />
     <section className="panel leaderboard-board" id="pump-directory"><div className="board-head"><div><p className="eyebrow">PUBLIC PUMP DIRECTORY / REFRESHES EVERY 5 MIN</p><h2>Most-followed Pump profiles</h2><p>Choose a profile to calculate the live quality of a rank-stratified sample of its active followers.</p></div><a className="import-link" href="https://pump.fun/profiles" target="_blank" rel="noreferrer">OPEN PUMP ↗</a></div><div className="table-wrap"><table><thead><tr><th>#</th><th>PROFILE</th><th>WALLET</th><th>SOURCE</th><th /></tr></thead><tbody>{pumpDirectory.map((item) => <tr key={item.wallet}><td className="rank">{String(item.rank).padStart(2, "0")}</td><td><b>@{item.label}</b><small>pump.fun/{item.handle}</small></td><td><small>{shortWallet(item.wallet)}</small></td><td><span className="source-pill pump">PUMP</span></td><td><button className="row-open" type="button" disabled={followerEdgeLoading} onClick={() => void loadFollowerEdge(item)}>FOLLOWER EDGE ↗</button></td></tr>)}{!pumpDirectory.length && <tr className="table-empty"><td colSpan={5}><b>{pumpDirectoryError || "Loading Pump's public directory…"}</b><span>Try refreshing in a moment.</span></td></tr>}</tbody></table></div><div className="board-footer"><span>{pumpDirectory.length} public Pump profiles</span><span>Follower Edge is calculated on demand and cached. Sample size, coverage, and confidence are always shown.</span></div></section>
     <FollowerEdgeCard metrics={followerEdge} label={followerEdgeLabel} loading={followerEdgeLoading} error={followerEdgeError} />

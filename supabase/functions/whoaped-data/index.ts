@@ -7,7 +7,7 @@ const ALLOWED_RESOURCES = new Set([
 ]);
 const ALLOWED_RPCS = new Set([
   "claim_ingestion_jobs", "replace_token_positions", "upsert_fomo_identity_batch",
-  "capture_thesis_evidence", "upsert_pump_identity_batch",
+  "capture_thesis_evidence", "capture_fomoscan_thesis_batch", "upsert_pump_identity_batch",
 ]);
 
 async function sha256(value: string) {

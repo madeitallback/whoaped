@@ -4,6 +4,7 @@ import type { FomoIdentity } from "../token-intel/types";
 import type { TokenSocialActor, TokenThesisEvidence } from "./contracts";
 import type { ThesisCaptureInput } from "../thesis-evidence";
 import type { PlatformProfileRecord } from "../platforms/types";
+import type { FomoTokenThesis } from "../token-intel/fomo-theses";
 import { isSupabaseConfigured, supabaseRequest } from "./supabase";
 
 export type ClaimedJob = {
@@ -240,6 +241,33 @@ export async function captureThesisEvidence(input: ThesisCaptureInput, contentHa
     }),
   });
   return await response.json() as string;
+}
+
+export async function persistFomoTokenTheses(mint: string, theses: FomoTokenThesis[]) {
+  if (!isSupabaseConfigured() || !theses.length) return 0;
+  const response = await supabaseRequest("rpc/capture_fomoscan_thesis_batch", {
+    method: "POST",
+    body: JSON.stringify({
+      evidence_mint: mint,
+      evidence_items: theses.map((thesis) => ({
+        provider_id: thesis.providerId,
+        author_id: thesis.authorId,
+        author_handle: thesis.authorHandle,
+        author_name: thesis.authorName,
+        profile_url: thesis.profileUrl,
+        source_url: thesis.sourceUrl,
+        source_text: thesis.sourceText,
+        published_at: thesis.publishedAt,
+        content_hash: thesis.contentHash,
+        like_count: thesis.likeCount,
+        holdings_usd: thesis.holdingsUsd,
+        realized_pnl_usd: thesis.realizedPnlUsd,
+        unrealized_pnl_usd: thesis.unrealizedPnlUsd,
+        closed_at: thesis.closedAt,
+      })),
+    }),
+  });
+  return Number(await response.json());
 }
 
 type ThesisRow = {

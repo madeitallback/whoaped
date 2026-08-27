@@ -1717,3 +1717,14 @@ Commit/deployment identifiers:
 ```
 
 The agent must not say “done” if a required migration is unapplied, production is inaccessible, follower data is mocked, only one hardcoded profile works, Dune work is repeatedly restarted, or results disappear after reload.
+
+## 25. Completion record — trending discovery + automatic Fomo thesis vertical (2026-08-27)
+
+- Added a server-only Birdeye Solana trending adapter and cached `/api/tokens/trending` discovery endpoint.
+- Added an accessible Windows 97 trending-token grid on the homepage; every card opens the canonical `/token/[mint]` workspace.
+- Added strict FomoScan token-thesis parsing with token/author attribution, stable provider IDs, bounded text, timestamps, PnL/holding metadata, and deterministic content hashes.
+- Added migration `011_fomoscan_thesis_ingestion.sql` with a service-role-only batch RPC that deduplicates evidence and preserves RLS.
+- Token thesis reads now use a 15-minute persisted cache, refresh from FomoScan only when stale, and degrade without hiding on-chain results.
+- Added a combined chronological token timeline for verified buys and attributable Pump/Fomo thesis evidence.
+- Provider cost control: Birdeye is revalidated every 45 seconds; FomoScan thesis refresh is at most once per persisted token per 15 minutes. Wallet identity lookup remains scoped to the measured token cohort.
+- Remaining platform-depth work: verified sell decoding/position reconciliation, a complete Fomo follower graph, and broader long-history identity coverage.

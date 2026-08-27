@@ -1,7 +1,8 @@
-import { captureThesisEvidence, readTokenTheses } from "@/lib/data/repository";
+import { captureThesisEvidence, persistFomoTokenTheses, readTokenTheses } from "@/lib/data/repository";
 import { isSupabaseConfigured } from "@/lib/data/supabase";
 import { isSolanaAddress } from "@/lib/providers";
 import { parseThesisCapture, thesisContentHash } from "@/lib/thesis-evidence";
+import { fetchFomoTokenTheses } from "@/lib/token-intel/fomo-theses";
 
 export const runtime = "nodejs";
 
@@ -10,8 +11,23 @@ export async function GET(request: Request) {
   if (!isSolanaAddress(mint)) return Response.json({ error: "A valid Solana mint is required." }, { status: 400 });
   if (!isSupabaseConfigured()) return Response.json({ evidence: [], persistence: "unavailable", coverage: "not_started" });
   try {
-    const evidence = await readTokenTheses(mint);
-    return Response.json({ evidence, persistence: "ready", coverage: evidence.length ? "partial" : "not_started" });
+    let evidence = await readTokenTheses(mint);
+    const newestCapture = evidence.reduce((latest, item) => Math.max(latest, Date.parse(item.capturedAt) || 0), 0);
+    const cacheFresh = newestCapture > Date.now() - 15 * 60_000;
+    let provider: "cached" | "refreshed" | "not_configured" | "unavailable" = cacheFresh ? "cached" : "unavailable";
+    if (!cacheFresh) {
+      try {
+        const fomo = await fetchFomoTokenTheses(mint);
+        provider = fomo.configured ? "refreshed" : "not_configured";
+        if (fomo.theses.length) {
+          await persistFomoTokenTheses(mint, fomo.theses);
+          evidence = await readTokenTheses(mint);
+        }
+      } catch (providerError) {
+        console.error("[token/thesis] FomoScan refresh failed", { error: providerError instanceof Error ? providerError.message : String(providerError) });
+      }
+    }
+    return Response.json({ evidence, persistence: "ready", coverage: evidence.length ? "partial" : "not_started", provider, refreshedAt: new Date().toISOString() });
   } catch (error) {
     console.error("[token/thesis] read failed", { error: error instanceof Error ? error.message : String(error) });
     return Response.json({ evidence: [], persistence: "degraded", coverage: "failed" }, { status: 503 });
