@@ -1,37 +1,96 @@
-import { NextRequest, NextResponse } from "next/server";
-import { advanceDuneJobs, duneIndexState } from "@/lib/dune";
-import { advanceHeliusJobs, heliusIndexState } from "@/lib/helius-index";
-import { advancePumpSwapJobs, postGradIndexProgress } from "@/lib/pumpswap-index";
-import { advanceHolderJobs, holderIndexProgress } from "@/lib/holder-index";
-import { advanceLabelJobs, enqueueLabelIndex, labelIndexProgress } from "@/lib/label-index";
-import { claimActiveJobMints } from "@/lib/supabase";
+import { PublicKey } from "@solana/web3.js";
+import { claimIngestionJobs, completeIngestionJob, continueIngestionJob, failIngestionJob, persistTokenScan, replaceTokenPositions, upsertVerifiedBuyEvents } from "@/lib/data/repository";
+import { isSupabaseConfigured } from "@/lib/data/supabase";
+import { indexAllHolders } from "@/lib/indexing/holders";
+import { findPumpSwapBuyerPage } from "@/lib/indexing/pumpswap";
+import { findCurveBuyerPage } from "@/lib/token-intel/buyers";
+import { connection } from "@/lib/token-intel/solana";
+import { parseMintInput } from "@/lib/token-intel/solana";
+import { scanToken } from "@/lib/token-intel/scan";
 
 export const runtime = "nodejs";
-export const maxDuration = 55;
+export const maxDuration = 60;
+const MAX_HISTORY_PAGES_PER_JOB = 100;
 
-function authorized(request: NextRequest) {
-  const secret = process.env.WORKER_SECRET;
-  return Boolean(secret && request.headers.get("authorization") === `Bearer ${secret}`);
+function withTimeout<T>(work: Promise<T>, timeoutMs: number, message: string) {
+  return Promise.race<T>([
+    work,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(message)), timeoutMs)),
+  ]);
 }
 
-/** Called by Supabase Cron; it claims a tiny, locked batch so duplicate cron
- * deliveries cannot process the same jobs concurrently. */
-export async function POST(request: NextRequest) {
-  if (!authorized(request)) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  try {
-    const mints = await claimActiveJobMints(2);
-    const jobs = [] as Array<{ mint: string; dune: string; helius: string; postGrad: string; holders: string; labels: string }>;
-    for (const mint of mints) {
-      await advanceDuneJobs(mint);
-      await advanceHeliusJobs(mint);
-      await advancePumpSwapJobs(mint);
-      await advanceHolderJobs(mint);
-      if ((await holderIndexProgress(mint)).state === "completed") await enqueueLabelIndex(mint);
-      await advanceLabelJobs(mint);
-      jobs.push({ mint, dune: await duneIndexState(mint), helius: await heliusIndexState(mint), postGrad: (await postGradIndexProgress(mint)).state, holders: (await holderIndexProgress(mint)).state, labels: (await labelIndexProgress(mint)).state });
-    }
-    return NextResponse.json({ ok: true, jobs });
-  } catch (error) {
-    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Worker failed" }, { status: 500 });
+async function runWorker(request: Request) {
+  const authorization = request.headers.get("authorization");
+  const workerSecret = process.env.WORKER_SECRET;
+  const cronSecret = process.env.CRON_SECRET;
+  const authorized = (workerSecret && authorization === `Bearer ${workerSecret}`)
+    || (cronSecret && authorization === `Bearer ${cronSecret}`);
+  if (!authorized) {
+    return Response.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
+  if (!isSupabaseConfigured()) return Response.json({ ok: false, error: "Supabase is not configured." }, { status: 503 });
+
+  // Claim one job per invocation so a slow provider call cannot hold a second
+  // leased job that this function never gets a chance to process.
+  const jobs = await claimIngestionJobs(1);
+  const results: Array<{ id: number; mint: string; status: "completed" | "continued" | "failed" }> = [];
+  for (const job of jobs) {
+    const mint = parseMintInput(job.resource_key);
+    if (!mint || !["token_refresh_v1", "holder_snapshot_v1", "curve_history_v1", "pumpswap_history_v1"].includes(job.job_type)) {
+      await failIngestionJob(job.id, "Unsupported or invalid ingestion job.");
+      results.push({ id: job.id, mint: job.resource_key, status: "failed" });
+      continue;
+    }
+    try {
+      if (job.job_type === "curve_history_v1" || job.job_type === "pumpswap_history_v1") {
+        const cursor = typeof job.payload.cursor === "string" ? job.payload.cursor : null;
+        const page = job.job_type === "curve_history_v1"
+          ? await findCurveBuyerPage(connection(), new PublicKey(String(job.payload.curve)), mint, cursor)
+          : await findPumpSwapBuyerPage(connection(), mint, cursor);
+        await upsertVerifiedBuyEvents(mint.toBase58(), page.events);
+        const nextPayload = {
+          ...job.payload,
+          cursor: page.nextCursor,
+          pages: Number(job.payload.pages || 0) + 1,
+          scanned_signatures: Number(job.payload.scanned_signatures || 0) + page.scannedSignatures,
+          buyers_found: Number(job.payload.buyers_found || 0) + page.events.length,
+        };
+        if (page.nextCursor && Number(nextPayload.pages) < MAX_HISTORY_PAGES_PER_JOB) {
+          await continueIngestionJob(job.id, nextPayload);
+          results.push({ id: job.id, mint: mint.toBase58(), status: "continued" });
+        } else {
+          await completeIngestionJob(job.id, {
+            ...nextPayload,
+            complete: !page.nextCursor,
+            truncated_reason: page.nextCursor ? "page_budget" : null,
+          });
+          results.push({ id: job.id, mint: mint.toBase58(), status: "completed" });
+        }
+        continue;
+      }
+      if (job.job_type === "holder_snapshot_v1") {
+        const snapshot = await withTimeout(
+          indexAllHolders(mint.toBase58()),
+          45_000,
+          "Complete holder indexing exceeded the current function time budget; partial live holders remain available.",
+        );
+        await replaceTokenPositions(mint.toBase58(), snapshot.observedAt, snapshot.holders);
+        await completeIngestionJob(job.id, { mint: mint.toBase58(), observed_at: snapshot.observedAt, holder_count: snapshot.holders.length, token_account_count: snapshot.tokenAccountCount });
+        results.push({ id: job.id, mint: mint.toBase58(), status: "completed" });
+        continue;
+      }
+      const scan = await scanToken(mint);
+      await persistTokenScan(scan);
+      await completeIngestionJob(job.id, { mint, observed_at: scan.updatedAt, holder_state: scan.coverage.holderState, buyer_state: scan.coverage.buyerState });
+      results.push({ id: job.id, mint: mint.toBase58(), status: "completed" });
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : "Token refresh failed.";
+      await failIngestionJob(job.id, message);
+      results.push({ id: job.id, mint: mint.toBase58(), status: "failed" });
+    }
+  }
+  return Response.json({ ok: true, claimed: jobs.length, results });
 }
+
+export const POST = runWorker;
+export const GET = runWorker;
