@@ -26,6 +26,18 @@ export async function saveProfile(profile: AnalysisProfile) {
   const store = await readStore(); store.profiles[profile.id] = profile; await save(store); return profile;
 }
 
+export async function saveProfiles(profiles: AnalysisProfile[]) {
+  if (!profiles.length) return profiles;
+  if (hasSupabase()) {
+    await supabase("profiles?on_conflict=id", { method: "POST", headers: headers({ Prefer: "resolution=merge-duplicates" }), body: JSON.stringify(profiles.map((profile) => ({ id: profile.id, source: profile.source, payload: profile, updated_at: new Date(profile.updatedAt).toISOString() }))) });
+    return profiles;
+  }
+  const store = await readStore();
+  for (const profile of profiles) store.profiles[profile.id] = profile;
+  await save(store);
+  return profiles;
+}
+
 export async function getProfile(id: string) {
   if (hasSupabase()) { const response = await supabase(`profiles?id=eq.${encodeURIComponent(id)}&select=payload`); const rows = await response.json() as Array<{ payload: AnalysisProfile }>; return rows[0]?.payload ?? null; }
   return (await readStore()).profiles[id] ?? null;

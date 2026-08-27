@@ -71,7 +71,14 @@ export function parseFomoLeaderboard(payload: unknown): SocialBoardRow[] {
 }
 
 export function pumpProfilesToBoard(profiles: AnalysisProfile[]): SocialBoardRow[] {
-  return profiles.filter((profile) => profile.source === "pump").sort((a, b) => (b.metrics.score ?? -1) - (a.metrics.score ?? -1)).map((profile, index) => ({
+  const byWallet = new Map<string, AnalysisProfile>();
+  for (const profile of profiles.filter((item) => item.source === "pump")) {
+    const wallet = profile.wallets[0]?.address;
+    if (!wallet) continue;
+    const current = byWallet.get(wallet);
+    if (!current || profile.updatedAt > current.updatedAt) byWallet.set(wallet, profile);
+  }
+  return [...byWallet.values()].sort((a, b) => (b.metrics.score ?? -1) - (a.metrics.score ?? -1)).map((profile, index) => ({
     id: `pump:${profile.id}`,
     platform: "pump",
     platformRank: index + 1,
@@ -89,7 +96,7 @@ export function pumpProfilesToBoard(profiles: AnalysisProfile[]): SocialBoardRow
     weightedReturn: profile.metrics.capitalWeightedReturn,
     medianHoldSeconds: profile.metrics.medianHoldSeconds,
     lastActivityAt: profile.metrics.lastActivityAt,
-    sampleLabel: `${profile.metrics.closedLots} verified closed lot${profile.metrics.closedLots === 1 ? "" : "s"}`,
+    sampleLabel: profile.id.startsWith("pump-daily:") ? `${profile.metrics.closedLots} closed positions / 90d batch` : `${profile.metrics.closedLots} verified closed lot${profile.metrics.closedLots === 1 ? "" : "s"}`,
   }));
 }
 

@@ -1821,3 +1821,24 @@ Tests run and results: 52/52 Vitest tests pass; TypeScript and the 23-route Next
 Known partial-data behavior: local sandboxed provider calls can render explicit degraded states; production uses the configured server-only providers. Pump rows appear only after a verified Pump wallet analysis exists—no demo traders are fabricated.
 Production verification: commit `68e96c0c4a3e0d0661f5648792b5f79b7188a07f` deployed as `dpl_48JwWqHhZZNvXf16ruqErkWV7i98` (`READY`) at `https://whoaped-phi.vercel.app`. The canonical API returned all 100 official Fomo 24-hour leaderboard entries, including FrankDeGods, while Birdeye returned 12 live trending Solana tokens. Opening trending token `aura` (`DtR4D9FtVoTX2569gaL837ZgrB6wNjj6tkmnX9Rdk9B2`) rendered the new cockpit with 4 verified Pump actors/current holders and 25 attributable Fomo theses. Vercel reported no runtime errors in the post-deploy window.
 Exact next phase: expand automatic Pump leaderboard coverage with a scheduled, cost-bounded wallet analysis pipeline so the combined daily board fills its Pump lane without manual analysis.
+
+## 30. Completion record — automatic daily Pump leaderboard pipeline (2026-08-27)
+
+- [x] Extract Pump's public profile-directory reader into a reusable, bounded server adapter with strict wallet deduplication.
+- [x] Add a daily Pump refresh service that takes only the first 20 public profiles and evaluates all wallets in one Dune SQL batch over 90 days.
+- [x] Convert batch summaries into stable `pump-daily:{wallet}` profiles with realized win rate, capital-weighted return, realized PnL, active-30d state, closed-position count, and the same transparent performance-score formula used elsewhere.
+- [x] Keep unavailable metrics null: the Dune batch does not produce median hold, capital deployed, or raw trades, so the board never invents them.
+- [x] Upsert the whole Pump cohort into the existing service-only Supabase `profiles` table in one REST write instead of one request per trader.
+- [x] Deduplicate manual and daily Pump analyses by verified wallet; the newest verified analysis wins.
+- [x] Add a secure `GET /api/leaderboard/pump/refresh` endpoint requiring Vercel's `Authorization: Bearer $CRON_SECRET` contract.
+- [x] Add the second and final Hobby-compatible Vercel cron at `0 6 * * *`, one hour after the existing ingestion worker recovery cron.
+- [x] Add stale-while-revalidate fallback to `/api/leaderboard/social`: if no automated Pump cohort is newer than 20 hours, one module-deduplicated background refresh is scheduled.
+- [x] Let the client retry the social board exactly once after 12 seconds while the first Pump batch is filling; no unbounded polling or provider loop.
+- [x] Add explicit UI status while Pump refreshes and keep any already verified manual Pump rows visible.
+
+Cost envelope: one Pump directory fetch, one Dune query containing at most 20 wallets, and one Supabase batch upsert per daily refresh. The 20-hour freshness gate and in-process promise lock protect the on-demand fallback; the cron remains the canonical refresh.
+
+Security/data boundary: no new public Supabase table or grant was introduced. Existing server-only credentials and RLS posture are reused. The cron route rejects requests unless `CRON_SECRET` matches exactly; secrets remain server-only.
+
+Tests run and results: 55/55 Vitest tests pass, including directory parsing, null preservation, deterministic IDs, and score conversion. The 24-route Next production build passes.
+Exact next phase: deploy, allow the first stale-while-revalidate batch to complete, verify persisted Pump rows on a second board request, and inspect Vercel runtime errors.

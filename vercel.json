@@ -4,6 +4,10 @@
     {
       "path": "/api/worker",
       "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/leaderboard/pump/refresh",
+      "schedule": "0 6 * * *"
     }
   ]
 }
