@@ -1798,3 +1798,25 @@ Production verification: commit `6a437c5458a93758a197e7508aaa8e6043ac82fd` deplo
 Remaining blocker: no implementation or deployment blocker. The first real relationship snapshot must intentionally originate from a signed-in user's visible Fomo Followers modal through Companion; it cannot be fabricated in an automated server smoke test.
 Exact next phase: reload/install Companion `0.9.0`, capture one real Fomo profile snapshot, confirm its persisted reload, then expand historical identity coverage.
 Commit/deployment identifiers: `6a437c5458a93758a197e7508aaa8e6043ac82fd`; `dpl_423cNkds1ugrDjZ9EqT22TVRTLVk` (`READY`).
+
+## 29. Completion record — KOLScan product refocus (2026-08-27)
+
+- [x] Pause extension work and reduce the web product to its two primary jobs: token intelligence and a daily cross-platform trader board.
+- [x] Replace the broad marketing/analyzer homepage with a token-first command surface, concise product model, live trending discovery, and leaderboard preview.
+- [x] Add `/leaderboard` and `/api/leaderboard/social` as the canonical daily social-trading board.
+- [x] Integrate the official FomoScan trader leaderboard using its rolling `24h` window, realized PnL, volume, trades, followers, avatar, and platform rank.
+- [x] Merge verified Pump wallet analyses into the same board without fabricating equivalence: Pump retains WHOAPED wallet-performance rank and Fomo retains official 24-hour PnL rank.
+- [x] Label every row with platform, original rank, metric basis, window/sample, and missing values; never silently mix 24-hour PnL with long-window wallet performance.
+- [x] Rebuild the token workspace around a two-column social cockpit: Pump/Fomo holder matrix on the left and attributable thesis feed on the right.
+- [x] Put platform filters, HOLDING/TRIMMED/EXITED state, verified buy/sell counts, thesis-source count, and profile links directly on each social actor row.
+- [x] Demote long wallet/position/timeline tables to supporting evidence below the core answer and remove duplicate social/thesis tables from the primary reading path.
+- [x] Replace generic/Windows-style web chrome with a dense dark terminal language inspired by Pump discovery and Fomo trader dashboards: Pump mint, Fomo violet, strong white metrics, compact rows, and explicit source badges.
+- [x] Add responsive layouts for token search, trending cards, leaderboard tables, actor matrix, and thesis feed.
+- [x] Add explicit provider-degraded and awaiting-analysis states so an empty source is never presented as a valid zero-result board.
+
+Metric boundary: the combined board is a cross-platform view, not a fake universal score. Fomo rows are official rolling 24-hour realized PnL; Pump rows are ranked WHOAPED wallet analyses with realized win rate, weighted return, and median hold. A future truly comparable rank requires the same measured wallet window and coverage on both platforms.
+
+Files changed: homepage, global visual system, token workspace social cockpit, dedicated leaderboard page/component/API, Fomo leaderboard parser/adapter, tests, and this plan.
+Tests run and results: 52/52 Vitest tests pass; TypeScript and the 23-route Next production build pass; visual browser verification passes for the homepage and board hierarchy.
+Known partial-data behavior: local sandboxed provider calls can render explicit degraded states; production uses the configured server-only providers. Pump rows appear only after a verified Pump wallet analysis exists—no demo traders are fabricated.
+Exact next phase: deploy and verify live Fomo rows plus a real token cockpit in production, then expand automatic Pump leaderboard coverage with a scheduled, cost-bounded wallet analysis pipeline.
