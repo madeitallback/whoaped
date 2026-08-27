@@ -219,6 +219,66 @@ export async function persistFomoFirstPartyLeaderboard(window: FomoLeaderboardOb
   return { affected: Number(await response.json()), capturedAt };
 }
 
+type FomoCollectorClaimRow = { claim_token: string; sealed_session: string };
+type FomoCollectorStatusRow = {
+  status: "setup_required" | "ready" | "running" | "error";
+  last_attempt_at: string | null;
+  last_success_at: string | null;
+  last_error: string | null;
+  consecutive_failures: number;
+  last_counts: Record<string, number>;
+  updated_at: string;
+};
+
+export async function setFomoCollectorSession(sealedSession: string) {
+  await supabaseRequest("rpc/set_fomo_collector_session", {
+    method: "POST",
+    body: JSON.stringify({ new_sealed_session: sealedSession }),
+  });
+}
+
+export async function claimFomoCollector() {
+  const response = await supabaseRequest("rpc/claim_fomo_collector", {
+    method: "POST",
+    body: JSON.stringify({ lease_seconds: 260 }),
+  });
+  const rows = await response.json() as FomoCollectorClaimRow[];
+  const row = rows[0];
+  return row ? { claimToken: row.claim_token, sealedSession: row.sealed_session } : null;
+}
+
+export async function completeFomoCollector(claimToken: string, sealedSession: string, counts: Record<string, number>) {
+  const response = await supabaseRequest("rpc/complete_fomo_collector", {
+    method: "POST",
+    body: JSON.stringify({ completed_claim_token: claimToken, next_sealed_session: sealedSession, capture_counts: counts }),
+  });
+  return Boolean(await response.json());
+}
+
+export async function failFomoCollector(claimToken: string, message: string) {
+  const response = await supabaseRequest("rpc/fail_fomo_collector", {
+    method: "POST",
+    body: JSON.stringify({ completed_claim_token: claimToken, failure_message: message }),
+  });
+  return Boolean(await response.json());
+}
+
+export async function getFomoCollectorStatus() {
+  if (!isSupabaseConfigured()) return { status: "unavailable" as const };
+  const response = await supabaseRequest("rpc/get_fomo_collector_status", { method: "POST", body: "{}" });
+  const rows = await response.json() as FomoCollectorStatusRow[];
+  const row = rows[0];
+  return row ? {
+    status: row.status,
+    lastAttemptAt: row.last_attempt_at,
+    lastSuccessAt: row.last_success_at,
+    lastError: row.last_error,
+    consecutiveFailures: row.consecutive_failures,
+    lastCounts: row.last_counts,
+    updatedAt: row.updated_at,
+  } : { status: "setup_required" as const };
+}
+
 type FomoLeaderboardRow = {
   period: FomoLeaderboardObservation["window"];
   normalized_handle: string;

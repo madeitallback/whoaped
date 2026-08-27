@@ -7,14 +7,17 @@
     "build": "next build",
     "start": "next start",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "fomo:connect": "node --env-file=.env.local scripts/bootstrap-fomo-collector.mjs"
   },
   "dependencies": {
     "@solana/spl-token": "^0.4.14",
     "@solana/web3.js": "^1.98.4",
+    "@sparticuz/chromium": "149.0.0",
     "@swc/helpers": "^0.5.23",
     "bs58": "^4.0.1",
     "next": "16.1.1",
+    "playwright-core": "1.62.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "scheduler": "^0.27.0"
