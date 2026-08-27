@@ -237,6 +237,14 @@ export async function setFomoCollectorSession(sealedSession: string) {
   });
 }
 
+export async function consumeFomoCollectorBootstrapToken(tokenHash: string) {
+  const response = await supabaseRequest("rpc/consume_fomo_collector_bootstrap_token", {
+    method: "POST",
+    body: JSON.stringify({ candidate_token_hash: tokenHash }),
+  });
+  return Boolean(await response.json());
+}
+
 export async function claimFomoCollector() {
   const response = await supabaseRequest("rpc/claim_fomo_collector", {
     method: "POST",

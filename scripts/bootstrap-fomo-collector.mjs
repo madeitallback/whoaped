@@ -12,9 +12,10 @@ const candidates = process.platform === "win32"
 
 const executablePath = candidates.find(existsSync);
 const workerSecret = process.env.WORKER_SECRET;
+const bootstrapToken = process.env.FOMO_BOOTSTRAP_TOKEN;
 const target = (process.env.WHOAPED_BOOTSTRAP_URL || "https://www.whoaped.xyz").replace(/\/$/, "");
 if (!executablePath) throw new Error("Chrome or Edge is required for the one-time Fomo connection.");
-if (!workerSecret) throw new Error("Run this command with WORKER_SECRET loaded from .env.local.");
+if (!workerSecret && !bootstrapToken) throw new Error("A short-lived FOMO_BOOTSTRAP_TOKEN or WORKER_SECRET is required.");
 
 const browser = await chromium.launch({ executablePath, headless: false });
 try {
@@ -32,7 +33,10 @@ try {
   };
   const response = await fetch(`${target}/api/platforms/fomo/collector/session`, {
     method: "PUT",
-    headers: { Authorization: `Bearer ${workerSecret}`, "Content-Type": "application/json" },
+    headers: {
+      ...(workerSecret ? { Authorization: `Bearer ${workerSecret}` } : { "X-Fomo-Bootstrap-Token": bootstrapToken }),
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify({ storageState }),
   });
   if (!response.ok) throw new Error(`WHOAPED rejected the Fomo session (${response.status}): ${(await response.text()).slice(0, 300)}`);

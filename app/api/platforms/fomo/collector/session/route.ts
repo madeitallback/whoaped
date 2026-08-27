@@ -1,4 +1,5 @@
-import { getFomoCollectorStatus, setFomoCollectorSession } from "@/lib/data/repository";
+import { createHash, timingSafeEqual } from "node:crypto";
+import { consumeFomoCollectorBootstrapToken, getFomoCollectorStatus, setFomoCollectorSession } from "@/lib/data/repository";
 import { sanitizeFomoStorageState, sealFomoStorageState } from "@/lib/platforms/fomo/session-crypto";
 
 export const runtime = "nodejs";
@@ -10,7 +11,17 @@ export async function GET() {
 
 export async function PUT(request: Request) {
   const authorization = request.headers.get("authorization");
-  if (!process.env.WORKER_SECRET || authorization !== `Bearer ${process.env.WORKER_SECRET}`) {
+  const expectedAuthorization = process.env.WORKER_SECRET ? `Bearer ${process.env.WORKER_SECRET}` : "";
+  const suppliedAuthorization = Buffer.from(authorization || "");
+  const expectedAuthorizationBytes = Buffer.from(expectedAuthorization);
+  const permanentAuth = Boolean(expectedAuthorization)
+    && suppliedAuthorization.length === expectedAuthorizationBytes.length
+    && timingSafeEqual(suppliedAuthorization, expectedAuthorizationBytes);
+  const bootstrapToken = request.headers.get("x-fomo-bootstrap-token");
+  const bootstrapAuth = !permanentAuth && bootstrapToken
+    ? await consumeFomoCollectorBootstrapToken(createHash("sha256").update(bootstrapToken).digest("hex"))
+    : false;
+  if (!permanentAuth && !bootstrapAuth) {
     return Response.json({ error: "Unauthorized." }, { status: 401 });
   }
   const length = Number(request.headers.get("content-length") || 0);
