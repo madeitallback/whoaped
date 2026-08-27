@@ -27,6 +27,9 @@ export type SocialBoardRow = {
 };
 
 type Json = Record<string, unknown>;
+type FomoLeaderboardResult = { rows: SocialBoardRow[]; capturedAt: string | null; configured: boolean; stale: boolean };
+let lastFomoLeaderboard: { value: FomoLeaderboardResult; savedAt: number } | null = null;
+const FOMO_STALE_FALLBACK_MS = 15 * 60 * 1000;
 
 const finite = (value: unknown) => {
   const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
@@ -109,18 +112,23 @@ export function pumpProfilesToBoard(profiles: AnalysisProfile[]): SocialBoardRow
   }));
 }
 
-export async function fetchFomoLeaderboard(): Promise<{ rows: SocialBoardRow[]; capturedAt: string | null; configured: boolean }> {
+export async function fetchFomoLeaderboard(): Promise<FomoLeaderboardResult> {
   const key = process.env.FOMOSCAN_API_KEY;
-  if (!key) return { rows: [], capturedAt: null, configured: false };
+  if (!key) return { rows: [], capturedAt: null, configured: false, stale: false };
   const base = (process.env.FOMOSCAN_BASE || "https://api.fomoscan.sh").replace(/\/$/, "");
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 8_000);
   try {
     const response = await fetch(`${base}/v2/leaderboard/traders?window=24h`, {
-      cache: "no-store", signal: controller.signal, headers: { authorization: `Bearer ${key}`, accept: "application/json" },
+      next: { revalidate: 60 }, signal: controller.signal, headers: { authorization: `Bearer ${key}`, accept: "application/json" },
     });
     if (!response.ok) throw new Error(`FomoScan leaderboard returned ${response.status}.`);
     const payload = await response.json() as Json;
-    return { rows: parseFomoLeaderboard(payload), capturedAt: timestamp(payload.capturedAt), configured: true };
+    const value = { rows: parseFomoLeaderboard(payload), capturedAt: timestamp(payload.capturedAt), configured: true, stale: false };
+    if (value.rows.length) lastFomoLeaderboard = { value, savedAt: Date.now() };
+    return value;
+  } catch (error) {
+    if (lastFomoLeaderboard && Date.now() - lastFomoLeaderboard.savedAt <= FOMO_STALE_FALLBACK_MS) return { ...lastFomoLeaderboard.value, stale: true };
+    throw error;
   } finally { clearTimeout(timer); }
 }
