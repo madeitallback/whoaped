@@ -1751,7 +1751,7 @@ Commit/deployment identifiers: Git commit `381ee1b92ce0b0ae5c2ac337753bd0c3068f4
 - Position states are deterministic: `HOLDING` means positive balance with no verified sell, `TRIMMED` means positive balance after a verified sell, `EXITED` means zero balance after a verified sell, and `NOT_HELD` never falsely claims a sale.
 - Added `/api/token/activity` plus the token workspace position table and chronological verified sell events.
 - Historical jobs use `decoder_version: 2` and new idempotency keys, so tokens indexed by the old buy-only decoder are safely reprocessed.
-- Each authorized worker invocation now schedules the next single-job invocation after responding. This drains the durable queue sequentially without holding multiple leases or depending on a Pro-only high-frequency cron; the daily Hobby-compatible cron remains the recovery wake-up.
+- Each authorized worker wake processes up to four sequential single-job invocations using a bounded depth header. This drains the durable queue without holding multiple leases, avoids Vercel recursion-loop responses, and keeps the daily Hobby-compatible cron as a recovery wake-up.
 - Migration `20260827065611_token_trade_reconciliation.sql` applied to Supabase project `afhbwkpqxxtvqcjfcktg`; 71 previous buys migrated and a 17-wallet reconciliation sample executed successfully.
 - `whoaped-data` Edge Function version 4 is active. `anon` and `authenticated` have no table or RPC access; only `service_role` can read/write/reconcile.
 - Supabase advisors report no warning/error findings. The INFO-only RLS-without-policy notices are intentional for service-only tables, and the new-index notices are expected before production traffic accumulates.

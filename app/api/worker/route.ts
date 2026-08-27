@@ -31,6 +31,7 @@ async function runWorker(request: Request) {
     return Response.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
   if (!isSupabaseConfigured()) return Response.json({ ok: false, error: "Supabase is not configured." }, { status: 503 });
+  const drainDepth = Math.max(0, Math.min(Number(request.headers.get("x-whoaped-drain-depth") || 0) || 0, 4));
 
   // Claim one job per invocation so a slow provider call cannot hold a second
   // leased job that this function never gets a chance to process.
@@ -91,8 +92,9 @@ async function runWorker(request: Request) {
       results.push({ id: job.id, mint: mint.toBase58(), status: "failed" });
     }
   }
-  if (jobs.length > 0) after(() => dispatchWorker(request.url));
-  return Response.json({ ok: true, claimed: jobs.length, results, drainScheduled: jobs.length > 0 });
+  const drainScheduled = jobs.length > 0 && drainDepth < 3;
+  if (drainScheduled) after(() => dispatchWorker(request.url, drainDepth));
+  return Response.json({ ok: true, claimed: jobs.length, results, drainScheduled, drainDepth });
 }
 
 export const POST = runWorker;
