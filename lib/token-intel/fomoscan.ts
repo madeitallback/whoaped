@@ -8,7 +8,8 @@ export function parseFomoScanProfile(body: unknown): FomoIdentity | null {
   const nested = source.identity && typeof source.identity === "object" ? source.identity as Record<string, unknown> : identities[0] as Record<string, unknown> | undefined;
   const handle = typeof source.handle === "string" ? source.handle : typeof nested?.handle === "string" ? nested.handle : null;
   const identityId = typeof source.id === "string" ? source.id : typeof nested?.id === "string" ? nested.id : null;
-  return handle || identityId ? { handle, identityId, source: "fomoscan" } : null;
+  const profilePicture = typeof source.profilePicture === "string" ? source.profilePicture : typeof nested?.profilePicture === "string" ? nested.profilePicture : null;
+  return handle || identityId ? { handle, identityId, ...(profilePicture ? { avatarUrl: profilePicture } : {}), source: "fomoscan" } : null;
 }
 
 async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 8_000) {

@@ -420,6 +420,7 @@ export async function persistFomoIdentities(mint: string, identities: Map<string
       handle: identity.handle,
       profile_url: identity.handle ? `https://fomo.family/profile/${encodeURIComponent(identity.handle)}` : "https://fomo.family/",
       source: identity.source,
+      avatar_url: identity.avatarUrl ?? null,
       relationship: isHolder && isBuyer ? "both" : isHolder ? "holder" : isBuyer ? "buyer" : "observed",
       observed_at: observedAt,
     }];

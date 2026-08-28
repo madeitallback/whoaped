@@ -15,7 +15,7 @@ export async function GET(request: Request) {
     const newestCapture = evidence.reduce((latest, item) => Math.max(latest, Date.parse(item.capturedAt) || 0), 0);
     const cacheFresh = newestCapture > Date.now() - 15 * 60_000;
     let provider: "first_party" | "fomoscan_fallback" | "collection_required" = evidence.length ? "first_party" : "collection_required";
-    if (!cacheFresh && process.env.FOMOSCAN_FALLBACK_ENABLED === "true") {
+    if (!cacheFresh && process.env.FOMOSCAN_API_KEY && process.env.FOMOSCAN_FALLBACK_ENABLED !== "false") {
       try {
         const fomo = await fetchFomoTokenTheses(mint);
         provider = fomo.configured ? "fomoscan_fallback" : "collection_required";

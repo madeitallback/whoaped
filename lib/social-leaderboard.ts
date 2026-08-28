@@ -157,7 +157,7 @@ export async function fetchFomoLeaderboard(): Promise<FomoLeaderboardResult> {
     });
     return { rows, capturedAt, configured: true, stale: Date.parse(capturedAt) < Date.now() - 15 * 60_000, source: "first_party" };
   }
-  if (process.env.FOMOSCAN_FALLBACK_ENABLED !== "true") return { rows: [], capturedAt: null, configured: true, stale: false, source: "none" };
+  if (!process.env.FOMOSCAN_API_KEY || process.env.FOMOSCAN_FALLBACK_ENABLED === "false") return { rows: [], capturedAt: null, configured: true, stale: false, source: "none" };
   const key = process.env.FOMOSCAN_API_KEY;
   if (!key) return { rows: [], capturedAt: null, configured: false, stale: false, source: "none" };
   const base = (process.env.FOMOSCAN_BASE || "https://api.fomoscan.sh").replace(/\/$/, "");
