@@ -12,6 +12,8 @@ const ALLOWED_RESOURCES = new Set([
 ]);
 const ALLOWED_RPCS = new Set([
   "claim_ingestion_jobs", "replace_token_positions", "upsert_fomo_identity_batch",
+  "upsert_fomo_leaderboard_profiles",
+  "read_fomo_verified_wallet_links",
   "capture_thesis_evidence", "capture_fomoscan_thesis_batch", "upsert_pump_identity_batch",
   "reconcile_token_trade_activity",
   "capture_fomo_follower_snapshot",
