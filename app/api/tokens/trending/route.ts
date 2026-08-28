@@ -5,8 +5,8 @@ export const runtime = "nodejs";
 export async function GET(request: Request) {
   const requested = Number(new URL(request.url).searchParams.get("limit") || 12);
   try {
-    const tokens = await fetchTrendingTokens(Number.isFinite(requested) ? requested : 12);
-    return Response.json({ tokens, updatedAt: new Date().toISOString(), coverage: "birdeye-solana" }, {
+    const { tokens, coverage } = await fetchTrendingTokens(Number.isFinite(requested) ? requested : 12);
+    return Response.json({ tokens, updatedAt: new Date().toISOString(), coverage }, {
       headers: { "Cache-Control": "public, s-maxage=45, stale-while-revalidate=120" },
     });
   } catch (error) {
