@@ -31,6 +31,7 @@ export function TokenWorkspace({ mint }: { mint: string }) {
 
   useEffect(() => {
     const controller = new AbortController();
+    let evidenceTimer: number | undefined;
     async function load() {
       setLoading(true); setError("");
       try {
@@ -54,7 +55,7 @@ export function TokenWorkspace({ mint }: { mint: string }) {
         const board = fetch("/api/leaderboard/social", { signal: controller.signal }).then(async (r) => r.ok ? (await r.json() as { rows?: SocialBoardRow[] }).rows || [] : []).then(setPerformance).catch(() => undefined);
         await Promise.all([refreshEvidence(), board]);
         const wallets = [...new Set([...body.holders.map((x) => x.owner), ...body.buyers.map((x) => x.owner)])];
-        if (!wallets.length) return;
+        if (!wallets.length) { setEnriching(false); return; }
         setEnriching(true);
         const cohort = JSON.stringify({ mint: body.mint, wallets, holderWallets: body.holders.map((x) => x.owner), buyerWallets: body.buyers.map((x) => x.owner) });
         const [fomo, pump] = await Promise.all([
@@ -64,14 +65,28 @@ export function TokenWorkspace({ mint }: { mint: string }) {
         if (fomo.ok) setIdentities(((await fomo.json()) as { identities?: Record<string, FomoIdentity> }).identities || {});
         if (pump.ok) setPumpProfiles(((await pump.json()) as { profiles?: Record<string, PlatformProfileRecord> }).profiles || {});
         await refreshEvidence();
+        // Fomo capture runs asynchronously in the persistent collector. Re-read
+        // evidence for two minutes so a token page upgrades itself without reload.
+        setEnriching(true);
+        let refreshes = 0;
+        evidenceTimer = window.setInterval(() => {
+          void (async () => {
+            if (controller.signal.aborted) return;
+            await refreshEvidence();
+            const latestFomo = await fetch("/api/token/fomo", { method: "POST", headers: { "content-type": "application/json" }, body: cohort, signal: controller.signal });
+            if (latestFomo.ok) setIdentities(((await latestFomo.json()) as { identities?: Record<string, FomoIdentity> }).identities || {});
+            refreshes += 1;
+            if (refreshes >= 12 && evidenceTimer) { window.clearInterval(evidenceTimer); setEnriching(false); }
+          })().catch(() => undefined);
+        }, 10_000);
       } catch (cause) {
         if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Token scan failed.");
       } finally {
-        if (!controller.signal.aborted) { setLoading(false); setEnriching(false); }
+        if (!controller.signal.aborted) setLoading(false);
       }
     }
     void load();
-    return () => controller.abort();
+    return () => { controller.abort(); if (evidenceTimer) window.clearInterval(evidenceTimer); };
   }, [mint]);
 
   const positionByWallet = useMemo(() => new Map(positions.map((x) => [x.wallet, x])), [positions]);
@@ -111,7 +126,7 @@ export function TokenWorkspace({ mint }: { mint: string }) {
   }, [actors, events]);
 
   const marketCap = scan?.token.priceUsd != null && scan.token.supplyUi != null ? scan.token.priceUsd * scan.token.supplyUi : null;
-  return <DesktopShell active="tokens" status={enriching ? "RESOLVING SOCIAL IDENTITIES" : "SOLANA LIVE"}><div className="workspace-stack token-workspace">
+  return <DesktopShell active="tokens" status={enriching ? "FINDING FOMO PROFILES" : "SOLANA LIVE"}><div className="workspace-stack token-workspace">
     {loading && <WindowPanel title="Scanning token" className="state-window"><p>Reading token metadata, verified Pump activity, current accounts, and social profiles…</p></WindowPanel>}
     {error && <WindowPanel title="Scan error" className="state-window"><p className="error" role="alert">{error}</p><Link className="win-button" href="/">← RETURN TO EXPLORE</Link></WindowPanel>}
     {scan && <>
@@ -147,7 +162,7 @@ function HolderCockpit({ holders, theses, performance, priceUsd, symbol, enrichi
     <WindowPanel title="PUMP + FOMO HOLDER MAP" className="holder-window" actions={<span className="window-badge"><i className="status-light" />LIVE</span>}>
       <div className="holder-toolbar"><div className="win-tabs" role="tablist" aria-label="Holder source">{(["all", "pump", "fomo"] as const).map((item) => <button role="tab" aria-selected={platform === item} className={platform === item ? "active" : ""} onClick={() => updatePlatform(item)} key={item}>{item === "all" ? `ALL ${holders.length}` : `${item.toUpperCase()} ${counts[item]}`}</button>)}</div><label className="win-search"><span>⌕</span><input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="Search profile or wallet" /></label></div>
       <div className="table-wrap"><table className="holder-table"><thead><tr><th>PROFILE / SOURCE</th><th>WALLET</th><th>HOLDING</th><th>SUPPLY</th><th>PERFORMANCE</th><th>THESIS</th></tr></thead><tbody>{visible.map((holder) => <HolderRow holder={holder} key={holder.wallet} priceUsd={priceUsd} symbol={symbol} ranking={ranking} theses={theses} />)}{!enriching && !visible.length && <tr><td colSpan={6}><EmptyState title="No matching holder." detail="Try another source filter or wallet/profile search." /></td></tr>}</tbody></table></div>
-      {enriching && <div className="indexing-line">Resolving verified Pump + Fomo identities…</div>}
+      {enriching && <div className="indexing-line">Matching visible Fomo profiles to on-chain wallets — this combined table updates automatically as evidence clears.</div>}
       <footer className="table-pager"><span>SHOW <select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }} aria-label="Rows per page"><option>10</option><option>25</option><option>50</option></select></span><span>{filtered.length ? `${(safePage - 1) * pageSize + 1}–${Math.min(safePage * pageSize, filtered.length)} OF ${filtered.length}` : "0 RESULTS"}</span><div><button disabled={safePage === 1} onClick={() => setPage(1)}>«</button><button disabled={safePage === 1} onClick={() => setPage((x) => Math.max(1, x - 1))}>‹</button><b>{safePage} / {pageCount}</b><button disabled={safePage === pageCount} onClick={() => setPage((x) => Math.min(pageCount, x + 1))}>›</button><button disabled={safePage === pageCount} onClick={() => setPage(pageCount)}>»</button></div></footer>
     </WindowPanel>
     <aside className="insight-rail">

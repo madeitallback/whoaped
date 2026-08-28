@@ -12,6 +12,7 @@ import {
 } from "@/lib/data/repository";
 import { resolveFomoHolderCapturesWithEvidence } from "@/lib/token-intel/fomo-holder-capture";
 import { fetchFomoWalletTradeEvidence } from "@/lib/token-intel/fomo-chain-evidence";
+import { refreshFomoWalletMetrics } from "@/lib/fomo-leaderboard-refresh";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,7 +46,8 @@ async function run(request: Request) {
         const activity = await readTokenActivity(tokenJob.resource_key);
         const resolved = await resolveFomoHolderCapturesWithEvidence(capture.holders, activity.positions.filter((position) => position.balanceUi > 0), (wallet, trades) => fetchFomoWalletTradeEvidence(wallet, tokenJob.resource_key, trades));
         const affected = await persistFomoHolderCaptures(tokenJob.resource_key, capture.sourceUrl, resolved);
-        await completeIngestionJob(tokenJob.id, { captured: affected, linked: resolved.filter((row) => row.wallet).length, unresolved: resolved.filter((row) => !row.wallet).length, source_url: capture.sourceUrl });
+        const metricRefresh = await refreshFomoWalletMetrics(resolved.flatMap((row) => row.wallet ? [{ handle: row.handle, wallet: row.wallet }] : [])).catch((error) => ({ refreshed: 0, skipped: 0, error: error instanceof Error ? error.message : "Fomo wallet metrics refresh failed." }));
+        await completeIngestionJob(tokenJob.id, { captured: affected, linked: resolved.filter((row) => row.wallet).length, unresolved: resolved.filter((row) => !row.wallet).length, source_url: capture.sourceUrl, metric_refresh: metricRefresh });
       } catch (captureError) {
         await failIngestionJob(tokenJob.id, captureError instanceof Error ? captureError.message : "Fomo token capture failed.");
       }

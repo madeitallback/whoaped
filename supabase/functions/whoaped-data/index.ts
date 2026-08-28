@@ -20,6 +20,7 @@ const ALLOWED_RPCS = new Set([
   "set_fomo_collector_session",
   "consume_fomo_collector_bootstrap_token",
   "claim_fomo_collector",
+  "claim_fomo_token_capture_job",
   "complete_fomo_collector",
   "fail_fomo_collector",
   "get_fomo_collector_status",

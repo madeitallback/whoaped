@@ -114,17 +114,27 @@ export async function collectFomoTokenHolders(mint: string): Promise<{ sourceUrl
     const page = context.pages()[0] || await context.newPage();
     const sourceUrl = `https://fomo.family/tokens/solana/${encodeURIComponent(mint)}`;
     await page.goto(sourceUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
+    await page.waitForTimeout(1_200);
+    const pageText = await page.locator("body").innerText();
+    // Fomo keeps its global leaderboard mounted beside token pages. If a token
+    // is absent, those sidebar links are still visible and must never be
+    // recorded as that token's holders.
+    if (pageText.includes("Token not found") || !pageText.includes("Holders")) return { sourceUrl, holders: [] };
     const links = page.locator('a[href^="/profile/"]');
-    await links.first().waitFor({ state: "visible", timeout: 30_000 });
     const holders = await links.evaluateAll((nodes) => nodes.flatMap((node) => {
+      const rect = node.getBoundingClientRect();
+      // The mounted leaderboard is the left rail (~312px) and account control
+      // is at the far right. Token-holder rows live in the central workspace.
+      if (rect.x < 360 || rect.x > window.innerWidth - 220 || rect.width < 80 || rect.height < 20) return [];
       const href = node.getAttribute("href") || "";
       const handle = decodeURIComponent(href.split("/").filter(Boolean).pop() || "").replace(/^@/, "").slice(0, 128);
       if (!/^[A-Za-z0-9_.-]{1,128}$/.test(handle)) return [];
-      const container = node.closest("article, li") || node.parentElement?.parentElement || node.parentElement || node;
-      const texts = Array.from(container.querySelectorAll("*")).filter((element) => element.children.length === 0).map((element) => (element.textContent || "").trim()).filter(Boolean);
-      const amountText = texts.find((text) => /^\d+(?:\.\d+)?\s*[KMB]?$/i.test(text));
+      const texts = Array.from(node.querySelectorAll("*")).filter((element) => element.children.length === 0).map((element) => (element.textContent || "").trim()).filter(Boolean);
+      // Only accept a token-unit value visible on the holder's own row. A
+      // rank, follower count, or dollar PnL is not evidence for a wallet map.
+      const amountText = texts.find((text) => /^\d+(?:\.\d+)?\s*[KMB]$/i.test(text));
       if (!amountText) return [];
-      const avatar = Array.from(container.querySelectorAll("img")).map((image) => image.getAttribute("src")).find(Boolean);
+      const avatar = Array.from(node.querySelectorAll("img")).map((image) => image.getAttribute("src")).find(Boolean);
       let avatarUrl: string | null = null;
       try { avatarUrl = avatar ? new URL(avatar, document.baseURI).toString() : null; } catch { avatarUrl = null; }
       return [{ handle, amountText, avatarUrl }];

@@ -335,6 +335,28 @@ export async function readFomoFirstPartyLeaderboard(window: FomoLeaderboardObser
   }));
 }
 
+type FomoVerifiedWalletLinkRow = {
+  handle: string | null;
+  wallet_links: { wallet: string; valid_to: string | null; confidence: "low" | "medium" | "high" | "verified" } | Array<{ wallet: string; valid_to: string | null; confidence: "low" | "medium" | "high" | "verified" }> | null;
+};
+
+export async function readFomoVerifiedWalletLinks(): Promise<Array<{ handle: string; wallet: string }>> {
+  if (!isSupabaseConfigured()) return [];
+  const select = "handle,wallet_links(wallet,valid_to,confidence)";
+  const response = await supabaseRequest(`social_profiles?platform=eq.fomo&select=${encodeURIComponent(select)}&limit=1000`);
+  const rows = await response.json() as FomoVerifiedWalletLinkRow[];
+  const links = new Map<string, { handle: string; wallet: string }>();
+  for (const row of rows) {
+    if (!row.handle) continue;
+    const nested = Array.isArray(row.wallet_links) ? row.wallet_links : row.wallet_links ? [row.wallet_links] : [];
+    for (const link of nested) {
+      if (link.valid_to || (link.confidence !== "high" && link.confidence !== "verified")) continue;
+      links.set(row.handle.toLowerCase(), { handle: row.handle, wallet: link.wallet });
+    }
+  }
+  return [...links.values()];
+}
+
 type StoredFomoProfileRow = {
   id: string;
   platform_profile_id: string;

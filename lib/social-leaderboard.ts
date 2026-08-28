@@ -1,5 +1,6 @@
 import type { AnalysisProfile } from "@/lib/types";
-import { readFomoFirstPartyLeaderboard } from "./data/repository";
+import { readFomoFirstPartyLeaderboard, readFomoVerifiedWalletLinks } from "./data/repository";
+import { listProfiles } from "./store";
 
 export type SocialBoardPlatform = "pump" | "fomo";
 
@@ -117,7 +118,20 @@ export async function fetchFomoLeaderboard(): Promise<FomoLeaderboardResult> {
   const observed = await readFomoFirstPartyLeaderboard("24h").catch(() => []);
   if (observed.length) {
     const capturedAt = observed[0].capturedAt;
-    const rows: SocialBoardRow[] = observed.map((row) => ({
+    const [links, profiles] = await Promise.all([readFomoVerifiedWalletLinks().catch(() => []), listProfiles(500).catch(() => [])]);
+    const walletByHandle = new Map(links.map((link) => [link.handle.toLowerCase(), link.wallet]));
+    const metricsByWallet = new Map<string, AnalysisProfile>();
+    for (const profile of profiles) {
+      if (profile.source !== "fomo") continue;
+      for (const item of profile.wallets.filter((wallet) => wallet.verified && wallet.chain === "solana")) {
+        const old = metricsByWallet.get(item.address.toLowerCase());
+        if (!old || old.updatedAt < profile.updatedAt) metricsByWallet.set(item.address.toLowerCase(), profile);
+      }
+    }
+    const rows: SocialBoardRow[] = observed.map((row) => {
+      const wallet = walletByHandle.get(row.handle.toLowerCase()) ?? null;
+      const metrics = wallet ? metricsByWallet.get(wallet.toLowerCase())?.metrics ?? null : null;
+      return {
       id: `fomo:first-party:${row.normalizedHandle}`,
       platform: "fomo",
       platformRank: row.platformRank,
@@ -125,21 +139,22 @@ export async function fetchFomoLeaderboard(): Promise<FomoLeaderboardResult> {
       label: row.displayName || row.handle,
       avatarUrl: row.avatarUrl,
       profileUrl: `https://fomo.family/profile/${encodeURIComponent(row.handle)}`,
-      wallet: null,
+      wallet,
       metricLabel: "24H REALIZED PNL",
       primaryMetric: row.realizedPnlUsd,
       pnl24hUsd: row.realizedPnlUsd,
       volume24hUsd: row.volumeUsd,
       trades24h: row.tradeCount,
       followers: row.followerCount,
-      winRate: null,
-      weightedReturn: null,
-      medianHoldSeconds: null,
-      lastActivityAt: null,
-      sampleLabel: "Fomo first-party / rolling 24h",
-      sampleConfidence: null,
-      profitFactor: null,
-    }));
+      winRate: metrics?.winRate ?? null,
+      weightedReturn: metrics?.capitalWeightedReturn ?? null,
+      medianHoldSeconds: metrics?.medianHoldSeconds ?? null,
+      lastActivityAt: metrics?.lastActivityAt ?? null,
+      sampleLabel: metrics ? `${metrics.closedLots} verified closed lots / 90d` : "Fomo first-party / rolling 24h",
+      sampleConfidence: metrics?.sampleConfidence ?? null,
+      profitFactor: metrics?.profitFactor ?? null,
+    } satisfies SocialBoardRow;
+    });
     return { rows, capturedAt, configured: true, stale: Date.parse(capturedAt) < Date.now() - 15 * 60_000, source: "first_party" };
   }
   if (process.env.FOMOSCAN_FALLBACK_ENABLED !== "true") return { rows: [], capturedAt: null, configured: true, stale: false, source: "none" };
