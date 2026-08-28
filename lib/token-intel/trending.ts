@@ -31,6 +31,14 @@ function finiteNumber(...values: unknown[]) {
   return null;
 }
 
+function dexImageUrl(value: unknown) {
+  if (typeof value !== "string" || !value.trim()) return null;
+  if (/^https:\/\//i.test(value)) return value;
+  // The live boosts API currently returns a Dex CMS image identifier for some assets.
+  // Normalize only safe identifiers; arbitrary relative URLs must never reach next/image.
+  return /^[A-Za-z0-9_-]{6,160}$/.test(value) ? `https://cdn.dexscreener.com/cms/images/${value}` : null;
+}
+
 export function parseBirdeyeTrending(payload: unknown): TrendingToken[] {
   if (!payload || typeof payload !== "object") throw new Error("Birdeye returned an unsupported trending payload.");
   const root = payload as JsonRecord;
@@ -64,7 +72,7 @@ export function parseDexScreenerTrending(profiles: unknown, pairs: unknown, limi
   const profileOrder = profiles
     .filter((profile): profile is JsonRecord => Boolean(profile) && typeof profile === "object")
     .filter((profile) => profile.chainId === "solana" && typeof profile.tokenAddress === "string")
-    .map((profile) => ({ mint: profile.tokenAddress as string, imageUrl: typeof profile.icon === "string" ? profile.icon : null }));
+    .map((profile) => ({ mint: profile.tokenAddress as string, imageUrl: dexImageUrl(profile.icon) }));
   const pairByMint = new Map<string, DexPair>();
   for (const raw of pairs) {
     if (!raw || typeof raw !== "object") continue;
@@ -86,7 +94,7 @@ export function parseDexScreenerTrending(profiles: unknown, pairs: unknown, limi
       mint: profile.mint,
       name: pair.baseToken.name,
       symbol: pair.baseToken.symbol,
-      imageUrl: profile.imageUrl || (typeof pair.info?.imageUrl === "string" ? pair.info.imageUrl : null),
+      imageUrl: profile.imageUrl || dexImageUrl(pair.info?.imageUrl),
       priceUsd: finiteNumber(pair.priceUsd),
       priceChange24hPct: finiteNumber(pair.priceChange?.h24),
       volume24hUsd: finiteNumber(pair.volume?.h24),
