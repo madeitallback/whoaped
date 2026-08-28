@@ -60,6 +60,10 @@ export interface AnalysisProfile {
   updatedAt: number;
   status: "ready" | "partial" | "queued" | "failed";
   notices: string[];
+  platformProfile?: {
+    followers: number | null;
+    avatarUrl: string | null;
+  };
 }
 
 export interface AnalyzeRequest {

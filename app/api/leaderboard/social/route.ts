@@ -18,6 +18,6 @@ export async function GET() {
     rows: [...fomo.rows, ...pump],
     sources: { fomo: fomo.rows.length ? fomo.stale ? "first_party_cached" : fomo.source === "first_party" ? "first_party_live" : "provider_fallback" : "collection_required", pump: pumpDailyFresh ? "daily_live" : pump.length ? "verified_analysis_refreshing" : "refreshing" },
     capturedAt: fomo.capturedAt || new Date().toISOString(),
-    methodology: "Fomo uses FomoScan's rolling 24h leaderboard, shared-cached for five minutes; an authorized first-party snapshot is used only during a provider outage. Pump uses verified 90d wallet behavior. Wallet metrics are shown only after a verified wallet match.",
+    methodology: "Both sources expose a 50-profile daily cohort. Fomo PnL is FomoScan's rolling 24h result; Pump PnL, win rate, return, and profit factor are WHOAPED-verified closed lots over 90d. Values with different windows are labelled, never blended.",
   }, { headers: { "Cache-Control": "public, s-maxage=30, stale-while-revalidate=300" } });
 }

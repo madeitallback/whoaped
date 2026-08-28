@@ -15,6 +15,7 @@ export type SocialBoardRow = {
   wallet: string | null;
   metricLabel: "24H REALIZED PNL" | "WR + WEIGHTED RETURN";
   primaryMetric: number | null;
+  realizedPnlUsd: number | null;
   pnl24hUsd: number | null;
   volume24hUsd: number | null;
   trades24h: number | null;
@@ -26,6 +27,8 @@ export type SocialBoardRow = {
   sampleLabel: string;
   sampleConfidence: number | null;
   profitFactor: number | null;
+  medianWinnerReturn: number | null;
+  medianLoserReturn: number | null;
 };
 
 type Json = Record<string, unknown>;
@@ -69,6 +72,7 @@ export function parseFomoLeaderboard(payload: unknown): SocialBoardRow[] {
       wallet: null,
       metricLabel: "24H REALIZED PNL" as const,
       primaryMetric: finite(row.pnl),
+      realizedPnlUsd: finite(row.pnl),
       pnl24hUsd: finite(row.pnl),
       volume24hUsd: finite(row.volume),
       trades24h: finite(row.numTrades),
@@ -80,13 +84,17 @@ export function parseFomoLeaderboard(payload: unknown): SocialBoardRow[] {
       sampleLabel: "Fomo / rolling 24h",
       sampleConfidence: null,
       profitFactor: null,
+      medianWinnerReturn: null,
+      medianLoserReturn: null,
     }];
   });
 }
 
 export function pumpProfilesToBoard(profiles: AnalysisProfile[]): SocialBoardRow[] {
+  const daily = profiles.filter((item) => item.source === "pump" && item.dataset === "pump_daily_v2");
+  const cohort = daily.length ? daily : profiles.filter((item) => item.source === "pump");
   const byWallet = new Map<string, AnalysisProfile>();
-  for (const profile of profiles.filter((item) => item.source === "pump")) {
+  for (const profile of cohort) {
     const wallet = profile.wallets[0]?.address;
     if (!wallet) continue;
     const current = byWallet.get(wallet);
@@ -98,15 +106,16 @@ export function pumpProfilesToBoard(profiles: AnalysisProfile[]): SocialBoardRow
     platformRank: index + 1,
     handle: profile.handle || profile.label,
     label: profile.label,
-    avatarUrl: null,
+    avatarUrl: profile.platformProfile?.avatarUrl ?? null,
     profileUrl: profile.handle ? `https://pump.fun/profile/${encodeURIComponent(profile.handle)}` : `https://solscan.io/account/${encodeURIComponent(profile.wallets[0].address)}`,
     wallet: profile.wallets[0].address,
     metricLabel: "WR + WEIGHTED RETURN",
     primaryMetric: profile.metrics.score,
+    realizedPnlUsd: profile.metrics.realizedPnlUsd,
     pnl24hUsd: null,
     volume24hUsd: null,
     trades24h: null,
-    followers: null,
+    followers: profile.platformProfile?.followers ?? null,
     winRate: profile.metrics.winRate,
     weightedReturn: profile.metrics.capitalWeightedReturn,
     medianHoldSeconds: profile.metrics.medianHoldSeconds,
@@ -114,6 +123,8 @@ export function pumpProfilesToBoard(profiles: AnalysisProfile[]): SocialBoardRow
     sampleLabel: profile.dataset === "pump_daily_v1" || profile.dataset === "pump_daily_v2" ? `${profile.metrics.closedLots} closed positions / 90d batch` : `${profile.metrics.closedLots} verified closed lot${profile.metrics.closedLots === 1 ? "" : "s"}`,
     sampleConfidence: profile.metrics.sampleConfidence ?? null,
     profitFactor: profile.metrics.profitFactor ?? null,
+    medianWinnerReturn: profile.metrics.medianWinnerReturn ?? null,
+    medianLoserReturn: profile.metrics.medianLoserReturn ?? null,
   }));
 }
 
@@ -135,6 +146,7 @@ async function enrichFomoRows<T extends SocialBoardRow>(sourceRows: T[]): Promis
     return {
       ...row,
       wallet,
+      realizedPnlUsd: row.realizedPnlUsd,
       winRate: metrics?.winRate ?? row.winRate,
       weightedReturn: metrics?.capitalWeightedReturn ?? row.weightedReturn,
       medianHoldSeconds: metrics?.medianHoldSeconds ?? row.medianHoldSeconds,
@@ -142,6 +154,8 @@ async function enrichFomoRows<T extends SocialBoardRow>(sourceRows: T[]): Promis
       sampleLabel: metrics ? `${metrics.closedLots} verified closed lots / 90d` : row.sampleLabel,
       sampleConfidence: metrics?.sampleConfidence ?? row.sampleConfidence,
       profitFactor: metrics?.profitFactor ?? row.profitFactor,
+      medianWinnerReturn: metrics?.medianWinnerReturn ?? row.medianWinnerReturn,
+      medianLoserReturn: metrics?.medianLoserReturn ?? row.medianLoserReturn,
     } satisfies SocialBoardRow as T;
   });
 }
@@ -158,7 +172,7 @@ async function readFomoScanLeaderboard(): Promise<FomoLeaderboardResult | null> 
     });
     if (!response.ok) throw new Error(`FomoScan leaderboard returned ${response.status}.`);
     const payload = await response.json() as Json;
-    const rawRows = parseFomoLeaderboard(payload);
+    const rawRows = parseFomoLeaderboard(payload).slice(0, 50);
     if (!rawRows.length) return null;
     const value = { rows: await enrichFomoRows(rawRows), capturedAt: timestamp(payload.capturedAt) || new Date().toISOString(), configured: true, stale: false, source: "fomoscan" as const };
     lastFomoLeaderboard = { value, savedAt: Date.now() };
@@ -190,6 +204,7 @@ export async function fetchFomoLeaderboard(): Promise<FomoLeaderboardResult> {
       wallet: null,
       metricLabel: "24H REALIZED PNL",
       primaryMetric: row.realizedPnlUsd,
+      realizedPnlUsd: row.realizedPnlUsd,
       pnl24hUsd: row.realizedPnlUsd,
       volume24hUsd: row.volumeUsd,
       trades24h: row.tradeCount,
@@ -201,6 +216,8 @@ export async function fetchFomoLeaderboard(): Promise<FomoLeaderboardResult> {
       sampleLabel: "Fomo first-party / rolling 24h",
       sampleConfidence: null,
       profitFactor: null,
+      medianWinnerReturn: null,
+      medianLoserReturn: null,
     } satisfies SocialBoardRow;
     }));
     return { rows, capturedAt, configured: true, stale: Date.parse(capturedAt) < Date.now() - 15 * 60_000, source: "first_party" };
