@@ -32,6 +32,9 @@ type Json = Record<string, unknown>;
 type FomoLeaderboardResult = { rows: SocialBoardRow[]; capturedAt: string | null; configured: boolean; stale: boolean; source: "first_party" | "fomoscan" | "none" };
 let lastFomoLeaderboard: { value: FomoLeaderboardResult; savedAt: number } | null = null;
 const FOMO_STALE_FALLBACK_MS = 15 * 60 * 1000;
+// A shared Vercel data-cache refresh every five minutes is 8,640 provider
+// requests over a 30-day month (not one request per visitor).
+const FOMOSCAN_LEADERBOARD_REVALIDATE_SECONDS = Math.max(60, Math.min(900, Number(process.env.FOMOSCAN_LEADERBOARD_TTL_SECONDS) || 300));
 
 const finite = (value: unknown) => {
   const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
@@ -114,23 +117,68 @@ export function pumpProfilesToBoard(profiles: AnalysisProfile[]): SocialBoardRow
   }));
 }
 
+async function enrichFomoRows<T extends SocialBoardRow>(sourceRows: T[]): Promise<T[]> {
+  if (!sourceRows.length) return sourceRows;
+  const [links, profiles] = await Promise.all([readFomoVerifiedWalletLinks().catch(() => []), listProfiles(500).catch(() => [])]);
+  const walletByHandle = new Map(links.map((link) => [link.handle.toLowerCase(), link.wallet]));
+  const metricsByWallet = new Map<string, AnalysisProfile>();
+  for (const profile of profiles) {
+    if (profile.source !== "fomo") continue;
+    for (const item of profile.wallets.filter((wallet) => wallet.verified && wallet.chain === "solana")) {
+      const old = metricsByWallet.get(item.address.toLowerCase());
+      if (!old || old.updatedAt < profile.updatedAt) metricsByWallet.set(item.address.toLowerCase(), profile);
+    }
+  }
+  return sourceRows.map((row) => {
+    const wallet = walletByHandle.get(row.handle.toLowerCase()) ?? row.wallet;
+    const metrics = wallet ? metricsByWallet.get(wallet.toLowerCase())?.metrics ?? null : null;
+    return {
+      ...row,
+      wallet,
+      winRate: metrics?.winRate ?? row.winRate,
+      weightedReturn: metrics?.capitalWeightedReturn ?? row.weightedReturn,
+      medianHoldSeconds: metrics?.medianHoldSeconds ?? row.medianHoldSeconds,
+      lastActivityAt: metrics?.lastActivityAt ?? row.lastActivityAt,
+      sampleLabel: metrics ? `${metrics.closedLots} verified closed lots / 90d` : row.sampleLabel,
+      sampleConfidence: metrics?.sampleConfidence ?? row.sampleConfidence,
+      profitFactor: metrics?.profitFactor ?? row.profitFactor,
+    } satisfies SocialBoardRow as T;
+  });
+}
+
+async function readFomoScanLeaderboard(): Promise<FomoLeaderboardResult | null> {
+  const key = process.env.FOMOSCAN_API_KEY;
+  if (!key || process.env.FOMOSCAN_FALLBACK_ENABLED === "false") return null;
+  const base = (process.env.FOMOSCAN_BASE || "https://api.fomoscan.sh").replace(/\/$/, "");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8_000);
+  try {
+    const response = await fetch(`${base}/v2/leaderboard/traders?window=24h`, {
+      next: { revalidate: FOMOSCAN_LEADERBOARD_REVALIDATE_SECONDS }, signal: controller.signal, headers: { authorization: `Bearer ${key}`, accept: "application/json" },
+    });
+    if (!response.ok) throw new Error(`FomoScan leaderboard returned ${response.status}.`);
+    const payload = await response.json() as Json;
+    const rawRows = parseFomoLeaderboard(payload);
+    if (!rawRows.length) return null;
+    const value = { rows: await enrichFomoRows(rawRows), capturedAt: timestamp(payload.capturedAt) || new Date().toISOString(), configured: true, stale: false, source: "fomoscan" as const };
+    lastFomoLeaderboard = { value, savedAt: Date.now() };
+    return value;
+  } finally { clearTimeout(timer); }
+}
+
 export async function fetchFomoLeaderboard(): Promise<FomoLeaderboardResult> {
+  // FomoScan is the production source of truth. The authorized Fomo capture is
+  // retained only as a resilient fallback if the provider is temporarily down.
+  try {
+    const live = await readFomoScanLeaderboard();
+    if (live) return live;
+  } catch (error) {
+    console.warn("[social-leaderboard] FomoScan refresh failed", { error: error instanceof Error ? error.message : String(error) });
+  }
   const observed = await readFomoFirstPartyLeaderboard("24h").catch(() => []);
   if (observed.length) {
     const capturedAt = observed[0].capturedAt;
-    const [links, profiles] = await Promise.all([readFomoVerifiedWalletLinks().catch(() => []), listProfiles(500).catch(() => [])]);
-    const walletByHandle = new Map(links.map((link) => [link.handle.toLowerCase(), link.wallet]));
-    const metricsByWallet = new Map<string, AnalysisProfile>();
-    for (const profile of profiles) {
-      if (profile.source !== "fomo") continue;
-      for (const item of profile.wallets.filter((wallet) => wallet.verified && wallet.chain === "solana")) {
-        const old = metricsByWallet.get(item.address.toLowerCase());
-        if (!old || old.updatedAt < profile.updatedAt) metricsByWallet.set(item.address.toLowerCase(), profile);
-      }
-    }
-    const rows: SocialBoardRow[] = observed.map((row) => {
-      const wallet = walletByHandle.get(row.handle.toLowerCase()) ?? null;
-      const metrics = wallet ? metricsByWallet.get(wallet.toLowerCase())?.metrics ?? null : null;
+    const rows = await enrichFomoRows(observed.map((row) => {
       return {
       id: `fomo:first-party:${row.normalizedHandle}`,
       platform: "fomo",
@@ -139,41 +187,24 @@ export async function fetchFomoLeaderboard(): Promise<FomoLeaderboardResult> {
       label: row.displayName || row.handle,
       avatarUrl: row.avatarUrl,
       profileUrl: `https://fomo.family/profile/${encodeURIComponent(row.handle)}`,
-      wallet,
+      wallet: null,
       metricLabel: "24H REALIZED PNL",
       primaryMetric: row.realizedPnlUsd,
       pnl24hUsd: row.realizedPnlUsd,
       volume24hUsd: row.volumeUsd,
       trades24h: row.tradeCount,
       followers: row.followerCount,
-      winRate: metrics?.winRate ?? null,
-      weightedReturn: metrics?.capitalWeightedReturn ?? null,
-      medianHoldSeconds: metrics?.medianHoldSeconds ?? null,
-      lastActivityAt: metrics?.lastActivityAt ?? null,
-      sampleLabel: metrics ? `${metrics.closedLots} verified closed lots / 90d` : "Fomo first-party / rolling 24h",
-      sampleConfidence: metrics?.sampleConfidence ?? null,
-      profitFactor: metrics?.profitFactor ?? null,
+      winRate: null,
+      weightedReturn: null,
+      medianHoldSeconds: null,
+      lastActivityAt: null,
+      sampleLabel: "Fomo first-party / rolling 24h",
+      sampleConfidence: null,
+      profitFactor: null,
     } satisfies SocialBoardRow;
-    });
+    }));
     return { rows, capturedAt, configured: true, stale: Date.parse(capturedAt) < Date.now() - 15 * 60_000, source: "first_party" };
   }
-  if (!process.env.FOMOSCAN_API_KEY || process.env.FOMOSCAN_FALLBACK_ENABLED === "false") return { rows: [], capturedAt: null, configured: true, stale: false, source: "none" };
-  const key = process.env.FOMOSCAN_API_KEY;
-  if (!key) return { rows: [], capturedAt: null, configured: false, stale: false, source: "none" };
-  const base = (process.env.FOMOSCAN_BASE || "https://api.fomoscan.sh").replace(/\/$/, "");
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 8_000);
-  try {
-    const response = await fetch(`${base}/v2/leaderboard/traders?window=24h`, {
-      next: { revalidate: 60 }, signal: controller.signal, headers: { authorization: `Bearer ${key}`, accept: "application/json" },
-    });
-    if (!response.ok) throw new Error(`FomoScan leaderboard returned ${response.status}.`);
-    const payload = await response.json() as Json;
-    const value = { rows: parseFomoLeaderboard(payload), capturedAt: timestamp(payload.capturedAt), configured: true, stale: false, source: "fomoscan" as const };
-    if (value.rows.length) lastFomoLeaderboard = { value, savedAt: Date.now() };
-    return value;
-  } catch (error) {
-    if (lastFomoLeaderboard && Date.now() - lastFomoLeaderboard.savedAt <= FOMO_STALE_FALLBACK_MS) return { ...lastFomoLeaderboard.value, stale: true };
-    throw error;
-  } finally { clearTimeout(timer); }
+  if (lastFomoLeaderboard && Date.now() - lastFomoLeaderboard.savedAt <= FOMO_STALE_FALLBACK_MS) return { ...lastFomoLeaderboard.value, stale: true };
+  return { rows: [], capturedAt: null, configured: Boolean(process.env.FOMOSCAN_API_KEY), stale: false, source: "none" };
 }
