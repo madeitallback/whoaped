@@ -1,7 +1,7 @@
 import { fetchFomoLeaderboard, pumpProfilesToBoard } from "@/lib/social-leaderboard";
 import { listProfiles } from "@/lib/store";
 import { after } from "next/server";
-import { PUMP_REFRESH_TTL_MS, refreshPumpLeaderboard } from "@/lib/pump-leaderboard-refresh";
+import { hasFreshPumpDailyProfiles, refreshPumpLeaderboard } from "@/lib/pump-leaderboard-refresh";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -12,7 +12,7 @@ export async function GET() {
     fetchFomoLeaderboard().catch(() => ({ rows: [], capturedAt: null, configured: true, stale: false, source: "none" as const })),
   ]);
   const pump = pumpProfilesToBoard(profiles);
-  const pumpDailyFresh = profiles.some((profile) => profile.dataset === "pump_daily_v2" && profile.updatedAt >= Date.now() - PUMP_REFRESH_TTL_MS);
+  const pumpDailyFresh = await hasFreshPumpDailyProfiles();
   if (!pumpDailyFresh) after(() => refreshPumpLeaderboard(false).catch((error) => console.error("[social-leaderboard] background Pump refresh failed", { error: error instanceof Error ? error.message : String(error) })));
   return Response.json({
     rows: [...fomo.rows, ...pump],

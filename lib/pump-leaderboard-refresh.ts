@@ -37,7 +37,10 @@ export function pumpSummaryProfile(directory: PumpDirectoryProfile, summary: Dun
 }
 
 export async function hasFreshPumpDailyProfiles(now = Date.now()) {
-  return (await listProfiles(100)).some((profile) => profile.dataset === "pump_daily_v2" && profile.updatedAt >= now - PUMP_REFRESH_TTL_MS);
+  const daily = (await listProfiles(100)).filter((profile) => profile.dataset === "pump_daily_v2" && profile.updatedAt >= now - PUMP_REFRESH_TTL_MS);
+  // A previous 20-wallet batch is valid historical data, but not a complete
+  // current board after the cohort was expanded to Pump's public top 50.
+  return new Set(daily.flatMap((profile) => profile.wallets.filter((wallet) => wallet.verified && wallet.chain === "solana").map((wallet) => wallet.address))).size >= PUMP_DAILY_BATCH_SIZE;
 }
 
 async function executeRefresh(force: boolean): Promise<PumpRefreshResult> {
