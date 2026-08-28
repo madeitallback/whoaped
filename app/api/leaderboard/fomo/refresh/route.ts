@@ -1,10 +1,17 @@
 import { openFomoStorageState, sealFomoStorageState } from "@/lib/platforms/fomo/session-crypto";
 import {
   claimFomoCollector,
+  claimFomoTokenCaptureJob,
+  completeIngestionJob,
   completeFomoCollector,
+  failIngestionJob,
   failFomoCollector,
   persistFomoFirstPartyLeaderboard,
+  persistFomoHolderCaptures,
+  readTokenActivity,
 } from "@/lib/data/repository";
+import { resolveFomoHolderCapturesWithEvidence } from "@/lib/token-intel/fomo-holder-capture";
+import { fetchFomoWalletTradeEvidence } from "@/lib/token-intel/fomo-chain-evidence";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,6 +36,19 @@ async function run(request: Request) {
     for (const snapshot of result.snapshots) {
       const persisted = await persistFomoFirstPartyLeaderboard(snapshot.window, snapshot.sourceUrl, snapshot.rows);
       counts[snapshot.window] = persisted ? persisted.affected : 0;
+    }
+    const tokenJob = await claimFomoTokenCaptureJob();
+    if (tokenJob) {
+      try {
+        const { collectFomoTokenHolders } = await import("@/lib/platforms/fomo/cloud-collector");
+        const capture = await collectFomoTokenHolders(tokenJob.resource_key);
+        const activity = await readTokenActivity(tokenJob.resource_key);
+        const resolved = await resolveFomoHolderCapturesWithEvidence(capture.holders, activity.positions.filter((position) => position.balanceUi > 0), (wallet, trades) => fetchFomoWalletTradeEvidence(wallet, tokenJob.resource_key, trades));
+        const affected = await persistFomoHolderCaptures(tokenJob.resource_key, capture.sourceUrl, resolved);
+        await completeIngestionJob(tokenJob.id, { captured: affected, linked: resolved.filter((row) => row.wallet).length, unresolved: resolved.filter((row) => !row.wallet).length, source_url: capture.sourceUrl });
+      } catch (captureError) {
+        await failIngestionJob(tokenJob.id, captureError instanceof Error ? captureError.message : "Fomo token capture failed.");
+      }
     }
     await completeFomoCollector(claim.claimToken, result.storageState ? sealFomoStorageState(result.storageState) : claim.sealedSession, counts);
     return Response.json({ ok: true, counts, refreshedAt: new Date().toISOString() });

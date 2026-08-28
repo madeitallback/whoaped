@@ -3,6 +3,7 @@ import { chromium, type Browser } from "playwright-core";
 import type { FomoLeaderboardCaptureItem } from "@/lib/data/repository";
 import { sanitizeFomoStorageState, type FomoStorageState } from "./session-crypto";
 import { connectPersistentFomoBrowser, isBrowserbaseConfigured } from "./browserbase";
+import type { FomoHolderCapture } from "@/lib/token-intel/fomo-holder-capture";
 
 export type FomoCollectorWindow = "24h" | "7d" | "30d" | "all";
 export type FomoCollectorSnapshot = {
@@ -102,5 +103,34 @@ export async function collectFomoLeaderboards(storageState: FomoStorageState) {
     return await scrapeFomoLeaderboards(browser, storageState);
   } finally {
     await browser?.close().catch(() => undefined);
+  }
+}
+
+export async function collectFomoTokenHolders(mint: string): Promise<{ sourceUrl: string; holders: FomoHolderCapture[] }> {
+  if (!isBrowserbaseConfigured()) throw new Error("Persistent Browserbase Fomo collection is not configured.");
+  const remote = await connectPersistentFomoBrowser();
+  try {
+    const context = remote.browser.contexts()[0];
+    const page = context.pages()[0] || await context.newPage();
+    const sourceUrl = `https://fomo.family/tokens/solana/${encodeURIComponent(mint)}`;
+    await page.goto(sourceUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
+    const links = page.locator('a[href^="/profile/"]');
+    await links.first().waitFor({ state: "visible", timeout: 30_000 });
+    const holders = await links.evaluateAll((nodes) => nodes.flatMap((node) => {
+      const href = node.getAttribute("href") || "";
+      const handle = decodeURIComponent(href.split("/").filter(Boolean).pop() || "").replace(/^@/, "").slice(0, 128);
+      if (!/^[A-Za-z0-9_.-]{1,128}$/.test(handle)) return [];
+      const container = node.closest("article, li") || node.parentElement?.parentElement || node.parentElement || node;
+      const texts = Array.from(container.querySelectorAll("*")).filter((element) => element.children.length === 0).map((element) => (element.textContent || "").trim()).filter(Boolean);
+      const amountText = texts.find((text) => /^\d+(?:\.\d+)?\s*[KMB]?$/i.test(text));
+      if (!amountText) return [];
+      const avatar = Array.from(container.querySelectorAll("img")).map((image) => image.getAttribute("src")).find(Boolean);
+      let avatarUrl: string | null = null;
+      try { avatarUrl = avatar ? new URL(avatar, document.baseURI).toString() : null; } catch { avatarUrl = null; }
+      return [{ handle, amountText, avatarUrl }];
+    }));
+    return { sourceUrl, holders: holders.slice(0, 100) };
+  } finally {
+    await remote.release();
   }
 }

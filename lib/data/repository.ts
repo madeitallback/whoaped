@@ -12,7 +12,7 @@ import { isSupabaseConfigured, supabaseRequest } from "./supabase";
 
 export type ClaimedJob = {
   id: number;
-  job_type: "token_refresh_v1" | "holder_snapshot_v1" | "curve_history_v1" | "pumpswap_history_v1";
+  job_type: "token_refresh_v1" | "holder_snapshot_v1" | "curve_history_v1" | "pumpswap_history_v1" | "fomo_token_capture_v1";
   resource_key: string;
   attempt_count: number;
   payload: Record<string, unknown>;
@@ -93,6 +93,16 @@ export async function enqueueHolderSnapshot(mint: string) {
       status: "queued",
       payload: { mint, schema_version: 1 },
     }),
+  });
+  return true;
+}
+
+export async function enqueueFomoTokenCapture(mint: string) {
+  if (!isSupabaseConfigured()) return false;
+  const refreshBucket = Math.floor(Date.now() / 900_000);
+  await supabaseRequest("ingestion_jobs?on_conflict=idempotency_key", {
+    method: "POST", headers: { Prefer: "resolution=ignore-duplicates,return=minimal" },
+    body: JSON.stringify({ job_type: "fomo_token_capture_v1", resource_key: mint, idempotency_key: `fomo_token_capture_v1:${mint}:${refreshBucket}`, status: "queued", payload: { mint, schema_version: 1 } }),
   });
   return true;
 }
@@ -591,6 +601,12 @@ export async function claimIngestionJobs(limit = 2): Promise<ClaimedJob[]> {
     body: JSON.stringify({ job_limit: Math.max(1, Math.min(limit, 4)), lease_seconds: 120 }),
   });
   return await response.json() as ClaimedJob[];
+}
+
+export async function claimFomoTokenCaptureJob(): Promise<ClaimedJob | null> {
+  const response = await supabaseRequest("rpc/claim_fomo_token_capture_job", { method: "POST", body: "{}" });
+  const rows = await response.json() as ClaimedJob[];
+  return rows[0] ?? null;
 }
 
 export async function completeIngestionJob(id: number, result: Record<string, unknown>) {

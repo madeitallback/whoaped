@@ -2013,3 +2013,10 @@ Browserbase production completion — 2026-08-28:
 - Supabase Cron job `whoaped-fomo-collector` is active on `*/5 * * * *` and invokes the WHOAPED production refresh route under the existing lease.
 - Consecutive autonomous successes completed at 16:45:24 UTC and 16:50:24 UTC. Both persisted non-zero snapshots: 151 profiles for 24H, 7D, and 30D, plus 101 all-time profiles; status returned to `ready`, `consecutive_failures=0`, and `last_error=null`.
 - This closes the dedicated-computer dependency. Fomo/Privy can still revoke the underlying site session; that condition is intentionally surfaced as a reconnect-required operational state rather than silently fabricating data.
+
+Automatic Fomo token-capture slice — 2026-08-28:
+
+- [x] Enqueue one deduplicated `fomo_token_capture_v1` job whenever a token is analyzed.
+- [x] Add a service-only Supabase claim function so only the Fomo Browserbase collector can claim that job; the generic on-chain worker never opens the persistent Fomo Context.
+- [x] After each leaderboard collection, the collector processes one queued token page, captures visible Fomo holder identities/avatars, resolves only evidence-backed wallet matches, and persists unresolved observations explicitly.
+- [ ] Verify the first deployed token-capture job against a real Fomo Solana token and record captured/linked/unresolved coverage.
