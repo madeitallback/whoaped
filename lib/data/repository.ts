@@ -430,6 +430,38 @@ export async function persistFomoIdentities(mint: string, identities: Map<string
   return true;
 }
 
+export type FomoLeaderboardProfileIdentity = {
+  platformProfileId: string;
+  handle: string;
+  displayName: string | null;
+  profileUrl: string;
+  wallet: string | null;
+  avatarUrl: string | null;
+};
+
+/** Persists a profile resolution without claiming it held a particular token. */
+export async function persistFomoLeaderboardProfiles(identities: FomoLeaderboardProfileIdentity[]) {
+  if (!isSupabaseConfigured() || !identities.length) return 0;
+  const observedAt = new Date().toISOString();
+  const unique = [...new Map(identities
+    .filter((identity) => identity.platformProfileId && identity.handle && identity.profileUrl)
+    .map((identity) => [identity.platformProfileId, identity]))
+    .values()]
+    .slice(0, 100)
+    .map((identity) => ({
+      platform_profile_id: identity.platformProfileId,
+      handle: identity.handle,
+      display_name: identity.displayName,
+      profile_url: identity.profileUrl,
+      wallet: identity.wallet,
+      avatar_url: identity.avatarUrl,
+      observed_at: observedAt,
+    }));
+  if (!unique.length) return 0;
+  const response = await supabaseRequest("rpc/upsert_fomo_leaderboard_profiles", { method: "POST", body: JSON.stringify({ identities: unique }) });
+  return Number(await response.json()) || 0;
+}
+
 export async function persistPumpIdentities(mint: string, profiles: Map<string, PlatformProfileRecord>, holderWallets: Set<string>, buyerWallets: Set<string>) {
   if (!isSupabaseConfigured() || !profiles.size) return false;
   const observedAt = new Date().toISOString();

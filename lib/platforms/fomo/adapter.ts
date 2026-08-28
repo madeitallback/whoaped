@@ -53,6 +53,35 @@ async function fetchFomoScanUser(handle: string): Promise<FomoScanUser | null> {
   return parseFomoScanUser(await response.json());
 }
 
+/**
+ * Resolves a bounded set of public Fomo leaderboard handles. The caller owns
+ * persistence and controls when this runs, so provider calls are not tied to
+ * visitor traffic.
+ */
+export async function resolveFomoProfiles(handles: string[], concurrency = 4) {
+  const unique = [...new Map(handles.flatMap((value) => {
+    try {
+      const handle = normalizeFomoHandle(value);
+      return [[handle.toLowerCase(), handle] as const];
+    } catch { return []; }
+  })).values()];
+  const queue = [...unique];
+  const profiles: FomoScanUser[] = [];
+  let failed = 0;
+  async function worker() {
+    while (queue.length) {
+      const handle = queue.shift();
+      if (!handle) return;
+      try {
+        const user = await fetchFomoScanUser(handle);
+        if (user) profiles.push(user);
+      } catch { failed += 1; }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, queue.length || 1)) }, worker));
+  return { profiles, failed };
+}
+
 export async function fetchFomoProfile(handle: string): Promise<PlatformProfileRecord | null> {
   const stored = await readStoredFomoProfile(normalizeFomoHandle(handle)).catch(() => null);
   if (stored?.primaryWallet || !process.env.FOMOSCAN_API_KEY || process.env.FOMOSCAN_FALLBACK_ENABLED === "false") return stored ?? (() => {

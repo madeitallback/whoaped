@@ -2,6 +2,7 @@ import { fetchFomoLeaderboard, pumpProfilesToBoard } from "@/lib/social-leaderbo
 import { listProfiles } from "@/lib/store";
 import { after } from "next/server";
 import { hasFreshPumpDailyProfiles, refreshPumpLeaderboard } from "@/lib/pump-leaderboard-refresh";
+import { refreshFomoLeaderboardProfiles } from "@/lib/fomo-leaderboard-refresh";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -14,6 +15,8 @@ export async function GET() {
   const pump = pumpProfilesToBoard(profiles);
   const pumpDailyFresh = await hasFreshPumpDailyProfiles();
   if (!pumpDailyFresh) after(() => refreshPumpLeaderboard(false).catch((error) => console.error("[social-leaderboard] background Pump refresh failed", { error: error instanceof Error ? error.message : String(error) })));
+  const unresolvedFomo = fomo.rows.filter((row) => !row.wallet).map((row) => row.handle);
+  if (unresolvedFomo.length) after(() => refreshFomoLeaderboardProfiles(unresolvedFomo).catch((error) => console.error("[social-leaderboard] background Fomo identity refresh failed", { error: error instanceof Error ? error.message : String(error) })));
   return Response.json({
     rows: [...fomo.rows, ...pump],
     sources: { fomo: fomo.rows.length ? fomo.stale ? "first_party_cached" : fomo.source === "first_party" ? "first_party_live" : "provider_fallback" : "collection_required", pump: pumpDailyFresh ? "daily_live" : pump.length ? "verified_analysis_refreshing" : "refreshing" },
