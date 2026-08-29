@@ -236,6 +236,7 @@ type FomoCollectorStatusRow = {
   last_success_at: string | null;
   last_error: string | null;
   consecutive_failures: number;
+  next_attempt_at?: string | null;
   last_counts: Record<string, number>;
   updated_at: string;
 };
@@ -292,6 +293,7 @@ export async function getFomoCollectorStatus() {
     lastSuccessAt: row.last_success_at,
     lastError: row.last_error,
     consecutiveFailures: row.consecutive_failures,
+    nextAttemptAt: row.next_attempt_at ?? null,
     lastCounts: row.last_counts,
     updatedAt: row.updated_at,
   } : { status: "setup_required" as const };

@@ -1,5 +1,112 @@
 # WHOAPED — Unified Product and Engineering Plan
 
+## Launch-readiness audit and execution plan — 2026-08-29
+
+### Honest production status
+
+WHOAPED is a **private beta**, not yet a launch-ready public product. The homepage, token scanner, Pump daily board, FomoScan daily board, Supabase, Helius, Birdeye, Dune, and custom domain are live. The core product statement is real: a viewer can open a Solana token, see measured on-chain holder positions, linked Pump/Fomo identities where proof exists, attributed theses where captured, and a mixed daily board.
+
+The launch claim must stay narrower until the gates below pass: **“beta for verified Pump behavior and Fomo public data”**, not “complete live Fomo holder intelligence for every coin.”
+
+Production evidence captured on 2026-08-29:
+
+- `GET /api/health` returned `200`, Solana RPC reachable, Supabase ready, and Helius/Birdeye/Dune/FomoScan configured.
+- The board rendered 50 Fomo + 50 Pump profiles. Fomo rows retain native rolling-24h PnL; verified Fomo wallet links progressively unlock WHOAPED 90-day win rate/return values. Pump rows have verified 90-day PnL, WR, weighted return, PF, and winner/loser return medians.
+- The autonomous Browserbase collector is **not healthy**: it has 222 consecutive failures because the Browserbase free-plan minutes are exhausted. The last successful Fomo capture was 2026-08-28 23:55 UTC. This is a P0 freshness/cost problem, not a frontend bug.
+- Token indexing has real failures: 17 `holder_snapshot_v1` jobs failed. Only five persisted token records were present in the audit (three complete holder snapshots; every buyer cohort remains partial). A public launch needs failure triage and more than a handful of validated token cases.
+- Current production observability has runtime logs but no structured operational dashboard, synthetic checks, rate limit, abuse protection, or user-facing freshness SLA.
+
+### Release definition
+
+**Friends beta (launchable after P0 + P1):** every screen has honest coverage/freshness states, no recurring paid-provider failure loop, shared caches prevent spend per visitor, public routes have abuse limits, 10 representative tokens pass end-to-end, and the launch copy says beta.
+
+**Public beta (after P2):** complete/partial indexing is reliable and measurable; all expensive work is queue-backed; live Fomo enrichment has a funded or intentionally disabled source with a clear stale state; metrics have version, window, sample, and provenance.
+
+**Official v1 (after P3):** production monitoring/alerts, incident runbook, real user performance instrumentation, documented retention/privacy policy, and a repeatable release/rollback check are operational.
+
+### P0 — stop incorrect or unstable production behavior
+
+1. **Collector circuit breaker and controlled Fomo mode.**
+   - Add `next_attempt_at`, `disabled_reason`, and `last_provider_status` to `fomo_collector_state`.
+   - On Browserbase 402, stop claiming the collector for 24 hours (or until an operator resets it); do not create a 503 every five minutes.
+   - Show `Fomo capture paused — last verified snapshot <time>` on token surfaces. Continue serving FomoScan's five-minute cached board where available.
+   - When Browserbase is funded/re-enabled, reset the breaker, run two non-zero scheduled collections, and verify every capture count plus session persistence.
+   - Exit: zero recurring 402 noise, no hidden spend loop, one explicit current/stale/paused state.
+
+2. **Repair token-index job reliability before broad traffic.**
+   - Query the 17 failed `holder_snapshot_v1` jobs by error class; replay only retryable RPC/time-budget failures with bounded exponential backoff, not blindly.
+   - Persist an attempt/error taxonomy (`provider_429`, `timeout`, `cursor_repeat`, `invalid_mint`, `internal`) and expose a token's latest indexing state.
+   - Keep full-holder pagination asynchronous. A user gets the fast partial snapshot immediately; the page polls a durable job/status endpoint instead of relying on a serverless `after()` chain.
+   - Exit: 10 diverse token tests (new Pump, graduated Pump, high-holder, low-holder, stale, unsupported) produce either a complete snapshot or a meaningful terminal reason; no unclassified failures.
+
+3. **Put hard budgets around every paid/slow provider.**
+   - Create a server-only provider-budget table keyed by provider/day/hour plus request type; decrement atomically before Dune/FomoScan/Browserbase work.
+   - Cache FomoScan leaderboard for 5 minutes, profile identity responses for 24 hours, Dune leader metrics for 24 hours, individual wallet metrics for 7 days unless manually refreshed, and token holder snapshots by freshness tier.
+   - Queue expensive work only once per `(resource, metric_version, freshness bucket)`. Never start raw Dune history or cloud-browser work as a direct consequence of every page view.
+   - Exit: a load test of 100 repeated board/token requests produces bounded provider calls and no duplicate jobs.
+
+4. **Add public-route abuse controls.**
+   - Rate-limit `/api/analyze`, `/api/token/scan`, `/api/token/*`, discovery, and follower routes by IP plus normalized resource key; return `429` with retry time.
+   - Reject malformed/oversized payloads at the route boundary, apply request timeouts, and keep worker/cron secrets server-only.
+   - Exit: burst tests cannot force Dune, Helius, Browserbase, or FomoScan work beyond budget; unauthorized worker/collector calls stay `401`.
+
+### P1 — make the information quality A1 for the friends beta
+
+1. **Median Hold and Hold Quality: build it from closed FIFO lots, not summary aggregates.**
+   - The current Dune leaderboard query aggregates token buys/sells; it can calculate PnL/WR but cannot supply a defensible hold duration. Do not derive a hold time from first/last activity.
+   - Add immutable normalized swap legs with `(wallet, signature, instruction_index, block_time, mint, side, quantity, usd_notional, source, source_version)` and a unique dedupe key.
+   - Create a durable `wallet_position_cycles` materialization. The worker sorts legs by block time + instruction index, ignores non-priced legs for financial metrics, matches partial sells FIFO against open buys, and persists each realized fragment with entry time, exit time, cost, proceeds, PnL, and `hold_seconds`.
+   - Recalculate versioned wallet snapshots from those cycles: realized PnL, closed-lot WR, capital-weighted return, median hold, winner/loser median hold, profit factor, and sample confidence. Require at least 10 closed lots for headline hold metrics; otherwise show `insufficient sample` rather than a number.
+   - Run it first for the Pump daily 50 and only for Fomo handles with a verified wallet link; one queued batch per day, never one raw-history query per viewer. Use 90 days for the board and 365 days only for an explicit wallet deep dive.
+   - Test exact cases: one buy/one sell, multiple buys/partial sells, multiple tokens, same-transaction multi-leg swaps, open lots, zero/unknown USD values, out-of-order data, and replays.
+   - Exit: board shows median hold only where the cycle sample is sufficient; clicking a metric can reveal the number of closed lots, window, FIFO method, and freshness.
+
+2. **Make Fomo identity and holder coverage explicit and durable.**
+   - Continue FomoScan profile-to-wallet enrichment in a dedicated budgeted queue; persist both resolved and checked-but-no-wallet state so unresolved profiles are not recharged on every board load.
+   - Keep Fomo token holders separate from generic on-chain holders: link a wallet only through a public Fomo profile contract or unique, auditable transaction/balance evidence. Never label all on-chain holders “Fomo holders.”
+   - For Fomo token captures, store source URL, capture time, visible balance text, confidence, and unresolved reason; release a token result only with the source/freshness banner.
+   - Exit: 10 Fomo-supported tokens have recorded precision checks; unsupported/stale tokens make that limitation visible in the holder map.
+
+3. **Finish the unified token experience, not just the board.**
+   - One canonical holder row: wallet, Pump/Fomo identities, position/exit state, actual token amount/supply share, performance metric with its own window, thesis excerpt/source/time, and coverage/freshness.
+   - Add stable loading/polling/failed/partial/complete states and a visible `last indexed` timestamp. A missing profile or thesis must read as unavailable—not a zero score or negative signal.
+   - Add token-level quality filters: `all holders`, `identified`, `Pump`, `Fomo`, `still holding`, plus wallet/profile search. Keep the raw on-chain holder count separate from identified social holders.
+   - Exit: friends can understand what the app knows in under ten seconds without reading methodology.
+
+4. **Leaderboard coherence.**
+   - Preserve separate source ranks/windows. Do not invent a combined global rank while Fomo is 24h and Pump is 90d.
+   - Make filtering/sorting explicit: `Fomo 24h PnL`, `Pump verified 90d`, and a future *comparable* combined view only after a common-window metric is computed for both lanes.
+   - Suppress/segregate insufficient rows from any performance sort. Show `n closed lots`, date refreshed, source, and value window in every detail state.
+   - Exit: every number has provenance; no table cell implies the two platforms are directly comparable when they are not.
+
+### P2 — production operability, trust, and launch loop
+
+1. **Observability.** Add structured JSON start/done/fail logs to all expensive routes; add Vercel Web Analytics + Speed Insights; track `token_scanned`, `token_ready`, `holder_filter_used`, `profile_opened`, `thesis_opened`, and provider/budget failures without wallet or secret leakage. Configure a daily error/coverage report and alerts for collector stale >15 min, job failure rate, provider 402/429, and worker backlog.
+2. **Release safety.** Add production smoke tests for homepage, leaderboard, health, token scan, holder progression, Fomo degraded mode, and Pump daily refresh. Run them on each deployment; document rollback to the prior Vercel deployment and a migration compatibility rule.
+3. **Performance.** Paginate large holder tables server-side, ship only visible data, lazy-load thesis/activity, and measure LCP/INP on homepage, leaderboard, and token page. Target p95 API cache hit <1 s and uncached token initial response <4 s with a visible background index state.
+4. **Product/legal trust.** Add beta disclaimer/not-financial-advice text, contact/feedback entry point, privacy/retention description, provider attribution where required, and a public methodology page matching the actual calculations.
+
+### P3 — improvements that do not block the first friends beta
+
+- Follower Edge for Fomo once an authorized, affordable follower source is stable; do not show it as zero before then.
+- Network/front-run graph after a clear time-window and false-positive evaluation set exist.
+- Extension reintegration only after the web token flow is stable; it must be user-triggered and never read hidden credentials.
+- A true comparable Pump + Fomo ranking after both lanes have common, versioned metric windows.
+- Baghold/conviction/capital-weighted hold metrics after the position-cycle pipeline has passed real-wallet validation.
+
+### Execution order and non-negotiable launch gate
+
+`P0.1 collector circuit breaker` → `P0.2 job reliability` → `P0.3 budgets/rate limits` → `P1.1 FIFO closed-lot pipeline` → `P1.2 Fomo identity coverage` → `P1.3 token UX` → `P2 observability + smoke tests` → friends beta.
+
+Do not announce an official launch until the following are all checked:
+
+- [ ] Browserbase/Fomo collector is funded and healthy **or** intentionally paused with an honest stale banner and no recurring error loop.
+- [ ] 10-token validation matrix is recorded with holder/buyer/social/thesis coverage and every failed job has a classified reason.
+- [ ] Median Hold is either backed by persisted FIFO cycles with adequate sample size or explicitly absent everywhere.
+- [ ] Provider budgets, cache TTLs, queue idempotency, and public-route rate limits are enforced.
+- [ ] Production smoke tests, runtime alerts, and a rollback runbook pass on the current deployment.
+- [ ] Methodology/UX match actual live data windows and beta limitations.
+
 ## 0. Binding unified-product decision — 2026-08-26
 
 WHOAPED is now the single product and this repository is the only implementation target. The former standalone WhoAped repository is a read-only donor for proven Solana indexing logic; it will not be deployed, linked, or merged wholesale. The existing WhoHeld product becomes a set of connected intelligence modules inside WHOAPED.
