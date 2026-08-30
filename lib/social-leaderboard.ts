@@ -45,6 +45,13 @@ const finite = (value: unknown) => {
 };
 
 const clean = (value: unknown, fallback = "Unknown") => typeof value === "string" && value.trim() ? value.trim().slice(0, 160) : fallback;
+const displayLabel = (value: unknown, handle: string) => {
+  const label = clean(value, "");
+  // The visible Fomo capture can occasionally expose its rank ("4.", "--")
+  // in the display-name field. A handle is a safer fallback than publishing
+  // that capture artefact as a trader name.
+  return label && !/^[\d\s._-]+$/.test(label) ? label : handle;
+};
 const timestamp = (value: unknown) => {
   const parsed = finite(value);
   if (parsed !== null) return new Date(parsed > 10_000_000_000 ? parsed : parsed * 1000).toISOString();
@@ -66,7 +73,7 @@ export function parseFomoLeaderboard(payload: unknown): SocialBoardRow[] {
       platform: "fomo" as const,
       platformRank: finite(row.rank) ?? index + 1,
       handle,
-      label: clean(row.label, handle),
+      label: displayLabel(row.label, handle),
       avatarUrl: clean(row.avatarUrl, "") || null,
       profileUrl: `https://fomo.family/profile/${encodeURIComponent(handle)}`,
       wallet: null,
@@ -100,7 +107,15 @@ export function pumpProfilesToBoard(profiles: AnalysisProfile[]): SocialBoardRow
     const current = byWallet.get(wallet);
     if (!current || profile.updatedAt > current.updatedAt) byWallet.set(wallet, profile);
   }
-  return [...byWallet.values()].sort((a, b) => (b.metrics.score ?? -1) - (a.metrics.score ?? -1)).map((profile, index) => ({
+  // A Pump headline needs enough closed lots to be meaningful. The directory
+  // itself includes creators and popular profiles with no measurable history.
+  const qualified = [...byWallet.values()].filter((profile) => (
+    profile.metrics.closedLots >= 10
+    && profile.metrics.realizedPnlUsd !== null
+    && profile.metrics.winRate !== null
+    && profile.metrics.capitalWeightedReturn !== null
+  ));
+  return qualified.sort((a, b) => (b.metrics.realizedPnlUsd ?? -Infinity) - (a.metrics.realizedPnlUsd ?? -Infinity)).map((profile, index) => ({
     id: `pump:${profile.id}`,
     platform: "pump",
     platformRank: index + 1,
@@ -142,7 +157,11 @@ async function enrichFomoRows<T extends SocialBoardRow>(sourceRows: T[]): Promis
   }
   return sourceRows.map((row) => {
     const wallet = walletByHandle.get(row.handle.toLowerCase()) ?? row.wallet;
-    const metrics = wallet ? metricsByWallet.get(wallet.toLowerCase())?.metrics ?? null : null;
+    const candidate = wallet ? metricsByWallet.get(wallet.toLowerCase())?.metrics ?? null : null;
+    // Do not decorate Fomo's 24h PnL with a noisy Pump-style win rate from a
+    // handful of closed positions. The Fomo result remains visible; derived
+    // wallet metrics appear only after a useful 90-day sample is available.
+    const metrics = candidate && candidate.closedLots >= 10 ? candidate : null;
     return {
       ...row,
       wallet,
@@ -157,6 +176,13 @@ async function enrichFomoRows<T extends SocialBoardRow>(sourceRows: T[]): Promis
       medianWinnerReturn: metrics?.medianWinnerReturn ?? row.medianWinnerReturn,
       medianLoserReturn: metrics?.medianLoserReturn ?? row.medianLoserReturn,
     } satisfies SocialBoardRow as T;
+  });
+}
+
+export function sortLeaderboardRows(rows: SocialBoardRow[]) {
+  return [...rows].sort((left, right) => {
+    const pnlDifference = (right.realizedPnlUsd ?? -Infinity) - (left.realizedPnlUsd ?? -Infinity);
+    return pnlDifference || left.platformRank - right.platformRank || left.handle.localeCompare(right.handle);
   });
 }
 
