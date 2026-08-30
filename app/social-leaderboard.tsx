@@ -3,13 +3,17 @@
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { formatDuration } from "@/lib/analysis";
-import { sortLeaderboardRows, type SocialBoardPlatform, type SocialBoardRow } from "@/lib/social-leaderboard";
+import type { SocialBoardPlatform, SocialBoardRow } from "@/lib/social-leaderboard";
 
 type Filter = "all" | SocialBoardPlatform;
 type Payload = { rows?: SocialBoardRow[]; capturedAt?: string; methodology?: string; sources?: { fomo: string; pump: string } };
 const usd = (value: number | null) => value === null ? "—" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", notation: "compact", maximumFractionDigits: 1, signDisplay: "always" }).format(value);
 const pct = (value: number | null) => value === null ? "—" : `${(value * 100).toFixed(1)}%`;
 const metricClass = (value: number | null) => value === null ? "" : value >= 0 ? "up" : "down";
+const sortRowsByPnl = (rows: SocialBoardRow[]) => [...rows].sort((left, right) => {
+  const pnlDifference = (right.realizedPnlUsd ?? -Infinity) - (left.realizedPnlUsd ?? -Infinity);
+  return pnlDifference || left.platformRank - right.platformRank || left.handle.localeCompare(right.handle);
+});
 
 export function SocialLeaderboard({ preview = false }: { preview?: boolean }) {
   const [payload, setPayload] = useState<Payload>({});
@@ -34,7 +38,7 @@ export function SocialLeaderboard({ preview = false }: { preview?: boolean }) {
     const perPlatformLimit = preview ? 5 : 50;
     return platforms.map((platform) => ({
       platform,
-      rows: sortLeaderboardRows((payload.rows || []).filter((row) => row.platform === platform)).slice(0, perPlatformLimit),
+      rows: sortRowsByPnl((payload.rows || []).filter((row) => row.platform === platform)).slice(0, perPlatformLimit),
     })).filter((section) => section.rows.length > 0);
   }, [filter, payload.rows, preview]);
   const rowCount = sections.reduce((count, section) => count + section.rows.length, 0);
