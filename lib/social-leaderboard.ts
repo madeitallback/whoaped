@@ -224,7 +224,7 @@ export async function fetchFomoLeaderboard(): Promise<FomoLeaderboardResult> {
       platform: "fomo",
       platformRank: row.platformRank,
       handle: row.handle,
-      label: row.displayName || row.handle,
+      label: displayLabel(row.displayName, row.handle),
       avatarUrl: row.avatarUrl,
       profileUrl: `https://fomo.family/profile/${encodeURIComponent(row.handle)}`,
       wallet: null,
